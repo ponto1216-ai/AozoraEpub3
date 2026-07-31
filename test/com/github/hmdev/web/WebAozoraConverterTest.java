@@ -11,6 +11,16 @@ import org.junit.Test;
 
 public class WebAozoraConverterTest
 {
+	@Test
+	public void pausesOnlyAfterEachConfiguredBatchOfDownloads()
+	{
+		Assert.assertFalse(WebAozoraConverter.shouldPauseAfterDownloads(0, 5, 60000));
+		Assert.assertFalse(WebAozoraConverter.shouldPauseAfterDownloads(4, 5, 60000));
+		Assert.assertTrue(WebAozoraConverter.shouldPauseAfterDownloads(5, 5, 60000));
+		Assert.assertTrue(WebAozoraConverter.shouldPauseAfterDownloads(10, 5, 60000));
+		Assert.assertFalse(WebAozoraConverter.shouldPauseAfterDownloads(5, 5, 0));
+	}
+
     private WebAozoraConverter createHamelnConverter() throws Exception
     {
         return WebAozoraConverter.createWebAozoraConverter(

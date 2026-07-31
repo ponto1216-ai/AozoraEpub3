@@ -309,6 +309,8 @@ public class AozoraEpub3Applet extends JFrame
 
 	//Web
 	JTextField jTextWebInterval;
+	JTextField jTextWebBatchSize;
+	JTextField jTextWebBatchPause;
 	JTextField jTextCachePath;
 	JButton jButtonCachePath;
 	JCheckBox jCheckWebLageImage;
@@ -2134,6 +2136,33 @@ public class AozoraEpub3Applet extends JFrame
 		jTextWebInterval.setPreferredSize(text3);
 		jTextWebInterval.addFocusListener(new TextSelectFocusListener(jTextWebInterval));
 		panel.add(jTextWebInterval);
+		label = new JLabel("秒");
+		label.setBorder(padding1);
+		panel.add(label);
+
+		label = new JLabel("  休止: ");
+		label.setBorder(padding2);
+		label.setToolTipText("指定話数を取得するごとに、指定秒数だけ休止します");
+		panel.add(label);
+		jTextWebBatchSize = new JTextField("5");
+		jTextWebBatchSize.setToolTipText(label.getToolTipText());
+		jTextWebBatchSize.setHorizontalAlignment(JTextField.RIGHT);
+		jTextWebBatchSize.setInputVerifier(new IntegerInputVerifier(5, 1, 999));
+		jTextWebBatchSize.setMaximumSize(text3);
+		jTextWebBatchSize.setPreferredSize(text3);
+		jTextWebBatchSize.addFocusListener(new TextSelectFocusListener(jTextWebBatchSize));
+		panel.add(jTextWebBatchSize);
+		label = new JLabel("話ごと ");
+		label.setBorder(padding1);
+		panel.add(label);
+		jTextWebBatchPause = new JTextField("60");
+		jTextWebBatchPause.setToolTipText(jTextWebBatchSize.getToolTipText());
+		jTextWebBatchPause.setHorizontalAlignment(JTextField.RIGHT);
+		jTextWebBatchPause.setInputVerifier(new IntegerInputVerifier(60, 0, 3600));
+		jTextWebBatchPause.setMaximumSize(text3);
+		jTextWebBatchPause.setPreferredSize(text3);
+		jTextWebBatchPause.addFocusListener(new TextSelectFocusListener(jTextWebBatchPause));
+		panel.add(jTextWebBatchPause);
 		label = new JLabel("秒");
 		label.setBorder(padding1);
 		panel.add(label);
@@ -4021,6 +4050,14 @@ public class AozoraEpub3Applet extends JFrame
 				try { interval = (int)(Float.parseFloat(jTextWebInterval.getText())*1000); } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
+				int batchSize = 5;
+				try { batchSize = Integer.parseInt(jTextWebBatchSize.getText()); } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+				int batchPause = 60;
+				try { batchPause = Integer.parseInt(jTextWebBatchPause.getText()) * 1000; } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
 				String Ua="";
 				try { Ua = (jComboUa.getSelectedItem().toString()); } catch (Exception e) {
                     throw new RuntimeException(e);
@@ -4047,7 +4084,7 @@ public class AozoraEpub3Applet extends JFrame
 
 				File srcFile = webConverter.convertToAozoraText(urlString, this.cachePath, interval, modifiedExpire,
 					this.jCheckWebConvertUpdated.isSelected(), this.jCheckWebModifiedOnly.isSelected(), jCheckWebModifiedTail.isSelected(),
-					beforeChapter,Ua,this.jCheckWebLageImage.isSelected());
+					beforeChapter,Ua,this.jCheckWebLageImage.isSelected(), batchSize, batchPause);
 
 				if (srcFile == null) {
 					LogAppender.append(urlString);
@@ -4641,6 +4678,8 @@ public class AozoraEpub3Applet extends JFrame
 		////////////////////////////////////////////////////////////////
 		//Web
 		setPropsFloatText(jTextWebInterval, props, "WebInterval");
+		setPropsIntText(jTextWebBatchSize, props, "WebBatchSize");
+		setPropsIntText(jTextWebBatchPause, props, "WebBatchPause");
 		if (props.getProperty("UserAgent") != null && !props.getProperty("UserAgent").isEmpty())
 			jComboUa.setSelectedItem(props.getProperty("UserAgent"));
 		setPropsSelected(jCheckWebLageImage, props, "jCheckWebLageImage");
@@ -4799,6 +4838,8 @@ public class AozoraEpub3Applet extends JFrame
 
 		//Web
 		props.setProperty("WebInterval", this.jTextWebInterval.getText());
+		props.setProperty("WebBatchSize", this.jTextWebBatchSize.getText());
+		props.setProperty("WebBatchPause", this.jTextWebBatchPause.getText());
 		props.setProperty("UserAgent", this.jComboUa.getEditor().getItem().toString().trim());
 		props.setProperty("jCheckWebLageImage", this.jCheckWebLageImage.isSelected()?"1":"");
 		props.setProperty("CachePath", this.jTextCachePath.getText());

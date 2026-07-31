@@ -67,6 +67,8 @@ public class WebAozoraConverter
 	//変換設定
 	/** 取得間隔 ミリ秒 */
 	int interval = 500;
+	int batchSize = 5;
+	int batchPause = 60000;
     /** ユーザーエージェント */
     String UserAgent ="";
     /** ウェブ画像の大きい画像を取得 */
@@ -204,13 +206,16 @@ public class WebAozoraConverter
      * @return 変換スキップやキャンセルならnullを返す
      */
 	public File convertToAozoraText(String urlString, File cachePath, int interval, float modifiedExpire,
-                                    boolean convertUpdated, boolean convertModifiedOnly, boolean convertModifiedTail, int beforeChapter, String UserAgent, boolean webLageImage) throws IOException
+	                                    boolean convertUpdated, boolean convertModifiedOnly, boolean convertModifiedTail, int beforeChapter, String UserAgent, boolean webLageImage,
+	                                    int batchSize, int batchPause) throws IOException
 	{
 		this.canceled = false;
 		//日付一覧が取得できない場合は常に更新
 		this.updated = true;
 
 		this.interval = Math.max(500, interval);
+		this.batchSize = Math.max(1, batchSize);
+		this.batchPause = Math.max(0, batchPause);
         this.UserAgent=UserAgent;
         this.webLageImage = webLageImage;
 		this.modifiedExpire = Math.max(0, modifiedExpire);
@@ -617,7 +622,8 @@ public class WebAozoraConverter
                     modifiedChapterIdx = new HashSet<Integer>();
                 }
 
-                int chapterIdx = 0;
+				int chapterIdx = 0;
+				int downloadedChapterCount = 0;
                 for (String chapterHref : chapterHrefs) {
                     if (this.canceled) return null;
 
@@ -639,18 +645,24 @@ public class WebAozoraConverter
                         boolean reload = noUpdateUrls != null && !noUpdateUrls.contains(chapterHref);
                         //nullでなく更新無しに含まれなければ再読込
 
-                        if (reload || !chapterCacheFile.exists()) {
-                            LogAppender.append("[" + (chapterIdx + 1) + "/" + chapterHrefs.size() + "] " + chapterHref);
-                            try {
-                                try {
-                                    Thread.sleep(this.interval);
+						if (reload || !chapterCacheFile.exists()) {
+							LogAppender.append("[" + (chapterIdx + 1) + "/" + chapterHrefs.size() + "] " + chapterHref);
+							try {
+								if (shouldPauseAfterDownloads(downloadedChapterCount, this.batchSize, this.batchPause)) {
+									LogAppender.println(" : Batch pause (" + (this.batchPause / 1000) + " sec).");
+									Thread.sleep(this.batchPause);
+									LogAppender.append("[" + (chapterIdx + 1) + "/" + chapterHrefs.size() + "] " + chapterHref);
+								}
+								try {
+									Thread.sleep(this.interval);
                                 } catch (InterruptedException e) {
                                 }
                                 cacheFile(chapterHref, chapterCacheFile, urlString);
                                 LogAppender.println(" : Loaded.");
                                 //ファイルがロードされたら更新有り
-                                this.updated = true;
-                                loaded = true;
+								this.updated = true;
+								loaded = true;
+								downloadedChapterCount++;
                             } catch (Exception e) {
                                 e.printStackTrace();
                                 LogAppender.println("htmlファイルが取得できませんでした : " + chapterHref);
@@ -1184,6 +1196,11 @@ public class WebAozoraConverter
 			default: bw.append(ch);
 			}
 		}
+	}
+
+	static boolean shouldPauseAfterDownloads(int downloadedChapterCount, int batchSize, int batchPause)
+	{
+		return batchSize > 0 && batchPause > 0 && downloadedChapterCount > 0 && downloadedChapterCount % batchSize == 0;
 	}
 
 	////////////////////////////////////////////////////////////////
