@@ -1218,8 +1218,8 @@ public class WebAozoraConverter
 						}
 					}
 				}
-				if (!buf.isEmpty()) text = buf.deleteCharAt(0).toString();
 			}
+			if (!buf.isEmpty()) text = buf.deleteCharAt(0).toString();
 			//置換指定ならreplaceして返す
 			if (text != null && !text.isEmpty()) {
 				return text;
