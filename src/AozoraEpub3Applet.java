@@ -4046,7 +4046,7 @@ public class AozoraEpub3Applet extends JFrame
 					continue;
 				}
 
-				int interval = 500;				
+				int interval = 500;
 				try { interval = (int)(Float.parseFloat(jTextWebInterval.getText())*1000); } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
