@@ -25,6 +25,7 @@ import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.Charset;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -129,6 +130,7 @@ public class AozoraEpub3Applet extends JFrame
 	JCheckBox jCheckPubFirst;
 	JCheckBox jCheckUseFileName;
 	JCheckBox jCheckAutoFileName;
+	JCheckBox jCheckMergeTextFiles;
 	JCheckBox jCheckTitlePage;
 	JRadioButton jRadioTitleNormal;
 	JRadioButton jRadioTitleMiddle;
@@ -835,6 +837,12 @@ public class AozoraEpub3Applet extends JFrame
 		jCheckAutoFileName = new JCheckBox("出力ファイル名に表題利用", true);
 		jCheckAutoFileName.setFocusPainted(false);
 		panel.add(jCheckAutoFileName);
+		label = new JLabel("  ");
+		panel.add(label);
+		jCheckMergeTextFiles = new JCheckBox("複数txtを1冊にまとめる");
+		jCheckMergeTextFiles.setToolTipText("複数のtxtを選択順に結合し、各ファイル名をEPUBの親チャプターとして収録します。画像付きtxtやZIP/RARは対象外です");
+		jCheckMergeTextFiles.setFocusPainted(false);
+		panel.add(jCheckMergeTextFiles);
 		label = new JLabel("  ");
 		panel.add(label);
 		//ファイルの上書き許可
@@ -2490,6 +2498,7 @@ public class AozoraEpub3Applet extends JFrame
 
 		//変換前確認の設定
 		setPropsSelected(this.jCheckConfirm, props, "ChkConfirm");
+		setPropsSelected(this.jCheckMergeTextFiles, props, "MergeTextFiles");
 
 		////////////////////////////////////////////////////////////////
 		//ログ出力先を設定
@@ -3531,7 +3540,13 @@ public class AozoraEpub3Applet extends JFrame
 			//すべてのファイルの変換実行
 			////////////////////////////////////////////////////////////////
 
-			this._convertFiles(srcFiles, dstPath);
+			File mergedTextFile = null;
+			if (this.jCheckMergeTextFiles.isSelected()) mergedTextFile = this.createMergedTextFile(srcFiles, dstPath);
+			try {
+				this._convertFiles(mergedTextFile == null ? srcFiles : new File[]{mergedTextFile}, dstPath);
+			} finally {
+				if (mergedTextFile != null) Files.deleteIfExists(mergedTextFile.toPath());
+			}
 
 			if (convertCanceled) {
 				this.jProgressBar.setStringPainted(false);
@@ -3546,6 +3561,38 @@ public class AozoraEpub3Applet extends JFrame
 		////////////////////////////////
 		System.gc();
 
+	}
+	/** 複数のプレーンテキストを、ファイルごとの大見出しを付けて一時ファイルに結合する。 */
+	static File createMergedTextFile(File[] srcFiles, File dstPath) throws IOException
+	{
+		if (srcFiles.length < 2) return null;
+		for (File srcFile : srcFiles) {
+			if (!srcFile.isFile() || !srcFile.getName().toLowerCase().endsWith(".txt")) {
+				throw new IOException("複数txtを1冊にまとめる は、複数のtxtファイルを直接選択した場合のみ利用できます");
+			}
+		}
+
+		File mergedFile = File.createTempFile("AozoraEpub3-merged-", ".txt", dstPath);
+		try (BufferedWriter writer = Files.newBufferedWriter(mergedFile.toPath(), StandardCharsets.UTF_8)) {
+			for (File srcFile : srcFiles) {
+				String charsetName = "UTF-8";
+				try {
+					charsetName = AozoraEpub3.getTextCharset(srcFile, "txt", null, 0);
+					if ("SHIFT_JIS".equalsIgnoreCase(charsetName)) charsetName = "MS932";
+				} catch (Exception ignored) {
+				}
+				String text = Files.readString(srcFile.toPath(), Charset.forName(charsetName));
+				if (text.contains("［＃挿絵（")) {
+					throw new IOException("画像付きtxtは結合できません : " + srcFile.getName());
+				}
+				String chapterName = srcFile.getName().replaceFirst("(?i)\\.txt$", "").replace("［", "").replace("］", "");
+				writer.write("［＃改ページ］\n［＃大見出し］" + chapterName + "［＃大見出し終わり］\n");
+				writer.write(text);
+				if (!text.endsWith("\n")) writer.newLine();
+			}
+		}
+		LogAppender.println("複数txtを1冊にまとめます : " + srcFiles.length + "ファイル");
+		return mergedFile;
 	}
 	/** サブディレクトリ再帰用 */
 	private void _convertFiles(File[] srcFiles, File dstPath)
@@ -4965,6 +5012,7 @@ public class AozoraEpub3Applet extends JFrame
 		props.setProperty("WebSplitChapter", this.jCheckWebSplitChapter.isSelected()?"1":"");
 		props.setProperty("WebSelectedChapter", this.jCheckWebSelectedChapter.isSelected()?"1":"");
 		props.setProperty("WebSelectedChapterNumbers", this.jTextWebSelectedChapter.getText());
+		props.setProperty("MergeTextFiles", this.jCheckMergeTextFiles.isSelected()?"1":"");
 
 		//確認ダイアログの元画像を残す
 		props.setProperty("ReplaceCover", this.jConfirmDialog.jCheckReplaceCover.isSelected()?"1":"");

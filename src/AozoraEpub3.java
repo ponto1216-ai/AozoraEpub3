@@ -622,9 +622,9 @@ public class AozoraEpub3
 	{	String cs;
         switch (ext) {
             case "txt" -> {
-                InputStream is = new FileInputStream(srcFile);
-                cs = Detector.getCharset(is);
-                return cs;
+                try (InputStream is = new FileInputStream(srcFile)) {
+                    return Detector.getCharset(is);
+                }
             }
             case "zip", "txtz" -> {
                 //Zipなら最初のtxt
