@@ -4169,13 +4169,14 @@ public class AozoraEpub3Applet extends JFrame
 						? WebAozoraConverter.parseChapterGroups(this.jTextWebSelectedChapter.getText())
 						: Collections.<Set<Integer>>emptyList();
 					List<WebAozoraConverter.ChapterTextFile> chapterFiles = WebAozoraConverter.splitConvertedTextByChapterGroups(srcFile, chapterGroups);
+					if (chapterFiles.isEmpty() && selectChapters) {
+						chapterFiles = WebAozoraConverter.splitConvertedTextByEpisodeGroups(srcFile, chapterGroups);
+					}
 					if (chapterFiles.isEmpty()) {
-						if (selectChapters) chapterFiles = WebAozoraConverter.splitConvertedTextByEpisodeGroups(srcFile, chapterGroups);
-						if (chapterFiles.isEmpty() && selectChapters) {
+						if (selectChapters) {
 							LogAppender.println("話の区切りがないため、指定範囲は出力できませんでした");
 							continue;
 						}
-						if (chapterFiles.isEmpty()) {
 						LogAppender.println("章見出しがないため、1冊として出力します");
 					} else {
 						webSourceFiles = new File[chapterFiles.size()];
@@ -4185,7 +4186,6 @@ public class AozoraEpub3Applet extends JFrame
 							this.webChapterPartTitles.put(chapterFile.file.getAbsolutePath(), chapterFile.chapterTitle);
 						}
 					}
-				}
 				}
 				try {
 					convertFiles(webSourceFiles, dstPath);
