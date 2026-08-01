@@ -1413,16 +1413,28 @@ public class WebAozoraConverter
 		File imageFile = new File(this.dstPath+"images/"+imagePath);
 
 		LogAppender.append("画像を取得してみます：" + src);
+		boolean imageReady = false;
 		try {
 			if (imageOutFile != null) {
 				if (imageOutFile.exists()) imageOutFile.delete();
 				cacheFile(src, imageOutFile, this.urlString);
-			} else if (!imageFile.exists()) {
-				cacheFile(src, imageFile, this.urlString);
+				imageReady = isValidImageFile(imageOutFile);
+			} else {
+				// Redirect/error HTML may have been saved with an image extension by
+				// an older version. Retry those files instead of embedding them.
+				if (!isValidImageFile(imageFile)) {
+					Files.deleteIfExists(imageFile.toPath());
+					cacheFile(src, imageFile, this.urlString);
+				}
+				imageReady = isValidImageFile(imageFile);
 			}
 		} catch (Exception e) {
 			e.printStackTrace();
 			LogAppender.println("画像が取得できませんでした : "+src);
+		}
+		if (!imageReady) {
+			LogAppender.println("画像データではありませんでした : " + src);
+			return;
 		}
 		LogAppender.println(" - 完了みたいです。");
 
@@ -1454,6 +1466,22 @@ public class WebAozoraConverter
 			case '\r': break;
 			default: bw.append(ch);
 			}
+		}
+	}
+
+	/** 画像拡張子を付けたエラーHTMLを再利用しないための軽量な形式確認 */
+	static boolean isValidImageFile(File imageFile) throws IOException
+	{
+		if (imageFile == null || !imageFile.isFile()) return false;
+		byte[] header = new byte[12];
+		try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(imageFile))) {
+			int length = in.read(header);
+			if (length < 3) return false;
+			return (header[0] == (byte)0xff && header[1] == (byte)0xd8 && header[2] == (byte)0xff)
+				|| (length >= 8 && header[0] == (byte)0x89 && header[1] == 0x50 && header[2] == 0x4e && header[3] == 0x47)
+				|| (header[0] == 'G' && header[1] == 'I' && header[2] == 'F')
+				|| (length >= 12 && header[0] == 'R' && header[1] == 'I' && header[2] == 'F' && header[3] == 'F'
+					&& header[8] == 'W' && header[9] == 'E' && header[10] == 'B' && header[11] == 'P');
 		}
 	}
 
@@ -1674,16 +1702,32 @@ public class WebAozoraConverter
 			parentFile.delete();
 		}
 		cacheFile.getParentFile().mkdirs();
-		//ダウンロード
-		URLConnection conn = new URI(urlString).toURL().openConnection();
-		ExtractInfo[] ua = this.queryMap.get(ExtractId.USER_AGENT);
-        if (this.UserAgent != null) conn.setRequestProperty("User-Agent", this.UserAgent);
-		if (ua != null && ua.length > 0) conn.setRequestProperty("User-Agent", ua[0].query);
-		ExtractInfo[] cookie = this.queryMap.get(ExtractId.COOKIE);
-		if (cookie != null && cookie.length > 0) conn.setRequestProperty("Cookie", cookie[0].query);
-		if (referer != null) conn.setRequestProperty("Referer", referer);
-		conn.setConnectTimeout(10000);//10秒
-		conn.setReadTimeout(10000);//10秒
+		// ダウンロード。画像CDNなどの通常のHTTPリダイレクトも追跡する。
+		URI requestUri = new URI(urlString);
+		URLConnection conn = null;
+		for (int redirectCount = 0; redirectCount <= 5; redirectCount++) {
+			conn = requestUri.toURL().openConnection();
+			ExtractInfo[] ua = this.queryMap.get(ExtractId.USER_AGENT);
+			if (this.UserAgent != null) conn.setRequestProperty("User-Agent", this.UserAgent);
+			if (ua != null && ua.length > 0) conn.setRequestProperty("User-Agent", ua[0].query);
+			ExtractInfo[] cookie = this.queryMap.get(ExtractId.COOKIE);
+			if (cookie != null && cookie.length > 0) conn.setRequestProperty("Cookie", cookie[0].query);
+			if (referer != null) conn.setRequestProperty("Referer", referer);
+			conn.setConnectTimeout(10000);//10秒
+			conn.setReadTimeout(10000);//10秒
+			if (!(conn instanceof HttpURLConnection http)) break;
+			http.setInstanceFollowRedirects(false);
+			int status = http.getResponseCode();
+			if (status < 300 || status >= 400) {
+				if (status < 200 || status >= 300) throw new IOException("HTTP " + status + " : " + requestUri);
+				break;
+			}
+			String location = http.getHeaderField("Location");
+			http.disconnect();
+			if (location == null || location.isEmpty()) throw new IOException("HTTP " + status + " (redirect location missing) : " + requestUri);
+			requestUri = requestUri.resolve(location);
+			if (redirectCount == 5) throw new IOException("Too many redirects : " + urlString);
+		}
 		BufferedInputStream bis = new BufferedInputStream(conn.getInputStream(), 8192);
 		BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(cacheFile));
 		//IOUtils.copy(bis, bos);

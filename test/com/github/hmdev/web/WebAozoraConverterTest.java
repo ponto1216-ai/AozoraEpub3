@@ -15,6 +15,22 @@ import org.junit.Test;
 public class WebAozoraConverterTest
 {
 	@Test
+	public void detectsOnlyRecognizedImageHeaders() throws Exception
+	{
+		File jpeg = File.createTempFile("web-image", ".jpg");
+		File html = File.createTempFile("web-image-error", ".jpg");
+		Files.write(jpeg.toPath(), new byte[] {(byte)0xff, (byte)0xd8, (byte)0xff, 0x00});
+		Files.writeString(html.toPath(), "<html>301 Moved Permanently</html>", StandardCharsets.UTF_8);
+		try {
+			Assert.assertTrue(WebAozoraConverter.isValidImageFile(jpeg));
+			Assert.assertFalse(WebAozoraConverter.isValidImageFile(html));
+		} finally {
+			Files.deleteIfExists(jpeg.toPath());
+			Files.deleteIfExists(html.toPath());
+		}
+	}
+
+	@Test
 	public void pausesOnlyAfterEachConfiguredBatchOfDownloads()
 	{
 		Assert.assertFalse(WebAozoraConverter.shouldPauseAfterDownloads(0, 5, 60000));

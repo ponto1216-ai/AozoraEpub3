@@ -2452,8 +2452,29 @@ public class AozoraEpub3Applet extends JFrame
                 jProgressBar.setValue(0);
                 jProgressBar.setStringPainted(false);
             }
-        });
+		});
 		panel.add(jButtonLogClear);
+		JButton jButtonLogSave = new JButton("保存");
+		jButtonLogSave.setToolTipText("現在表示されているログを、指定した場所にテキストファイルとして保存します");
+		jButtonLogSave.setBorder(padding2);
+		jButtonLogSave.setFocusPainted(false);
+		jButtonLogSave.addActionListener(e -> {
+			JFileChooser fileChooser = new JFileChooser(currentPath);
+			fileChooser.setDialogTitle("ログの保存先を選択");
+			fileChooser.setFileFilter(new FileNameExtensionFilter("テキストファイル(txt)", "txt"));
+			fileChooser.setSelectedFile(new File("AozoraEpub3-log-" + new SimpleDateFormat("yyyyMMdd-HHmmss").format(new Date()) + ".txt"));
+			if (fileChooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+			File logFile = fileChooser.getSelectedFile();
+			if (logFile.exists() && JOptionPane.showConfirmDialog(this, "同名のファイルがあります。上書きしますか？", "ログ保存", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return;
+			try {
+				Files.writeString(logFile.toPath(), jTextArea.getText(), StandardCharsets.UTF_8);
+				LogAppender.println("ログを保存しました : " + logFile.getAbsolutePath());
+			} catch (IOException ex) {
+				LogAppender.error("ログを保存できませんでした : " + ex.getMessage());
+				JOptionPane.showMessageDialog(this, "ログを保存できませんでした。\n" + ex.getMessage(), "ログ保存", JOptionPane.ERROR_MESSAGE);
+			}
+		});
+		panel.add(jButtonLogSave);
 
 		////////////////////////////////////////////////////////////////
 		//確認ダイアログ
