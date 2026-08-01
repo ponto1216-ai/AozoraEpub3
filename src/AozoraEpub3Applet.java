@@ -333,6 +333,7 @@ public class AozoraEpub3Applet extends JFrame
 
 	//プログレスバー
 	JProgressBar jProgressBar;
+	JButton jButtonPause;
 	JButton jButtonCancel;
 
 	/** 出力先選択ダイアログ表示イベントactionPerformed(null)で明示的に呼び出す。 */
@@ -2386,6 +2387,19 @@ public class AozoraEpub3Applet extends JFrame
 		label = new JLabel(" ");
 		label.setBorder(padding2H);
 		panel.add(label);
+		jButtonPause = new JButton("休止");
+		jButtonPause.setBorder(padding2);
+		jButtonPause.setFocusPainted(false);
+		jButtonPause.setEnabled(false);
+		jButtonPause.setToolTipText("Web小説の本文取得を休止／再開します。実行中の通信は完了後に休止します");
+		jButtonPause.addActionListener(e -> {
+			if (webConverter == null || webConverter.isCanceled()) return;
+			boolean paused = !webConverter.isPaused();
+			webConverter.setPaused(paused);
+			jButtonPause.setText(paused ? "再開" : "休止");
+			LogAppender.println(paused ? "本文取得を休止します" : "本文取得を再開します");
+		});
+		panel.add(jButtonPause);
 		jButtonCancel = new JButton("処理中止");
 		jButtonCancel.setBorder(padding2);
 		jButtonCancel.setIcon(new ImageIcon(Objects.requireNonNull(AozoraEpub3Applet.class.getResource("images/cancel.png"))));
@@ -4081,6 +4095,10 @@ public class AozoraEpub3Applet extends JFrame
 					LogAppender.println(" は変換できませんでした");
 					continue;
 				}
+				SwingUtilities.invokeLater(() -> {
+					jButtonPause.setEnabled(true);
+					jButtonPause.setText("休止");
+				});
 
 				int interval = 500;
 				try { interval = (int)(Float.parseFloat(jTextWebInterval.getText())*1000); } catch (Exception e) {
@@ -4351,6 +4369,8 @@ public class AozoraEpub3Applet extends JFrame
 		//変換中に操作不可にしないもの
 		if (!enabled) this.jCheckConfirm.setEnabled(true);
 		this.jButtonCancel.setEnabled(!enabled);
+		this.jButtonPause.setEnabled(!enabled);
+		if (enabled) this.jButtonPause.setText("休止");
 		//disabledになっているものは再チェック
 		if (enabled) {
 			this.setProfileMoveEnable();

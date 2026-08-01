@@ -33,6 +33,14 @@ public class WebAozoraConverterTest
 	}
 
 	@Test
+	public void estimatesDownloadTimeIncludingConfiguredBatchPauses()
+	{
+		Assert.assertEquals(1_670_000L, WebAozoraConverter.estimateDownloadMillis(77, 10_000, 5, 60_000));
+		Assert.assertEquals("約27分50秒", WebAozoraConverter.formatEstimatedDownloadTime(1_670_000L));
+		Assert.assertEquals("約0秒", WebAozoraConverter.formatEstimatedDownloadTime(0));
+	}
+
+	@Test
 	public void splitsConvertedTextAtMajorChapterHeadings() throws Exception
 	{
 		File source = File.createTempFile("web-chapter-split", ".txt");

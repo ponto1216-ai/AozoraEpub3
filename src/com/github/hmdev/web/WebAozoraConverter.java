@@ -101,6 +101,9 @@ public class WebAozoraConverter
 	int beforeChapter = 0;
 	/** この時間前までに取得された追加更新話を変換する */
 	float modifiedExpire = 24;
+	/** 本文取得の休止制御 */
+	private final Object pauseLock = new Object();
+	private volatile boolean paused = false;
 
 	////////////////////////////////
 	//キャンセルリクエストされたらtrue
@@ -195,6 +198,18 @@ public class WebAozoraConverter
 	public void canceled()
 	{
 		this.canceled = true;
+		setPaused(false);
+	}
+	public void setPaused(boolean paused)
+	{
+		synchronized (this.pauseLock) {
+			this.paused = paused;
+			if (!paused) this.pauseLock.notifyAll();
+		}
+	}
+	public boolean isPaused()
+	{
+		return this.paused;
 	}
 	public boolean isCanceled()
 	{
@@ -226,6 +241,7 @@ public class WebAozoraConverter
 	                                    int batchSize, int batchPause) throws IOException
 	{
 		this.canceled = false;
+		this.paused = false;
 		//日付一覧が取得できない場合は常に更新
 		this.updated = true;
 
@@ -633,8 +649,20 @@ public class WebAozoraConverter
 
 				int chapterIdx = 0;
 				int downloadedChapterCount = 0;
+				int scheduledDownloadCount = 0;
+				for (String chapterHref : chapterHrefs) {
+					if (chapterHref == null || chapterHref.isEmpty()) continue;
+					String chapterPath = CharUtils.escapeUrlToFile(chapterHref.substring(chapterHref.indexOf("//") + 2));
+					File chapterCacheFile = new File(cachePath.getAbsolutePath() + "/" + chapterPath + (chapterPath.endsWith("/") ? "index.html" : ""));
+					boolean reload = noUpdateUrls != null && !noUpdateUrls.contains(chapterHref);
+					if (reload || !chapterCacheFile.exists()) scheduledDownloadCount++;
+				}
+				if (scheduledDownloadCount > 0) {
+					LogAppender.println("本文の取得予定: " + scheduledDownloadCount + "/" + chapterHrefs.size() + "話（完了まで" + formatEstimatedDownloadTime(estimateDownloadMillis(scheduledDownloadCount, this.interval, this.batchSize, this.batchPause)) + "、通信時間を除く）");
+				}
                 for (String chapterHref : chapterHrefs) {
                     if (this.canceled) return null;
+					if (!waitIfPaused()) return null;
 
                     if (chapterHref != null && !chapterHref.isEmpty()) {
                         //画像srcをフルパスにするときに使うページのパス
@@ -659,13 +687,10 @@ public class WebAozoraConverter
 							try {
 								if (shouldPauseAfterDownloads(downloadedChapterCount, this.batchSize, this.batchPause)) {
 									LogAppender.println(" : Batch pause (" + (this.batchPause / 1000) + " sec).");
-									Thread.sleep(this.batchPause);
+									if (!waitFor(this.batchPause)) return null;
 									LogAppender.append("[" + (chapterIdx + 1) + "/" + chapterHrefs.size() + "] " + chapterHref);
 								}
-								try {
-									Thread.sleep(this.interval);
-                                } catch (InterruptedException e) {
-                                }
+								if (!waitFor(this.interval)) return null;
                                 cacheFile(chapterHref, chapterCacheFile, urlString);
                                 LogAppender.println(" : Loaded.");
                                 //ファイルがロードされたら更新有り
@@ -1435,6 +1460,56 @@ public class WebAozoraConverter
 	static boolean shouldPauseAfterDownloads(int downloadedChapterCount, int batchSize, int batchPause)
 	{
 		return batchSize > 0 && batchPause > 0 && downloadedChapterCount > 0 && downloadedChapterCount % batchSize == 0;
+	}
+
+	/** 本文取得の待機時間だけを基にした概算時間。実際の通信時間は含めない。 */
+	static long estimateDownloadMillis(int downloadCount, int interval, int batchSize, int batchPause)
+	{
+		if (downloadCount <= 0) return 0;
+		long pauseCount = batchSize > 0 && batchPause > 0 ? (downloadCount - 1L) / batchSize : 0;
+		return Math.max(0, interval) * (long)downloadCount + Math.max(0, batchPause) * pauseCount;
+	}
+
+	static String formatEstimatedDownloadTime(long millis)
+	{
+		long seconds = Math.max(0, millis) / 1000;
+		long minutes = seconds / 60;
+		long remainingSeconds = seconds % 60;
+		if (minutes == 0) return "約" + remainingSeconds + "秒";
+		if (remainingSeconds == 0) return "約" + minutes + "分";
+		return "約" + minutes + "分" + remainingSeconds + "秒";
+	}
+
+	/** 休止が解除されるまで待つ。キャンセルされた場合はfalse。 */
+	private boolean waitIfPaused()
+	{
+		synchronized (this.pauseLock) {
+			while (this.paused && !this.canceled) {
+				try {
+					this.pauseLock.wait();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					return false;
+				}
+			}
+		}
+		return !this.canceled;
+	}
+
+	/** 休止・キャンセルへ反応できる待機。 */
+	private boolean waitFor(long millis)
+	{
+		long endTime = System.currentTimeMillis() + Math.max(0, millis);
+		while (System.currentTimeMillis() < endTime) {
+			if (!waitIfPaused()) return false;
+			try {
+				Thread.sleep(Math.min(200, Math.max(1, endTime - System.currentTimeMillis())));
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				return false;
+			}
+		}
+		return !this.canceled;
 	}
 
 	////////////////////////////////////////////////////////////////
