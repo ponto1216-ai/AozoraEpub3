@@ -15,6 +15,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.time.Instant;
 import java.time.ZonedDateTime;
@@ -39,6 +40,21 @@ import com.github.hmdev.web.ExtractInfo.ExtractId;
 /** HTMLを青空txtに変換 */
 public class WebAozoraConverter
 {
+	/** Web小説を章ごとに分けた一時テキスト */
+	public static final class ChapterTextFile
+	{
+		public final File file;
+		public final String chapterTitle;
+		public final int chapterNumber;
+
+		ChapterTextFile(File file, String chapterTitle, int chapterNumber)
+		{
+			this.file = file;
+			this.chapterTitle = chapterTitle;
+			this.chapterNumber = chapterNumber;
+		}
+	}
+
 	final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
 
 	/** Singletonインスタンス格納 keyはFQDN */
@@ -523,6 +539,7 @@ public class WebAozoraConverter
             //nullならキャッシュ更新無しで、空ならすべて更新される
             HashSet<String> noUpdateUrls = null;
             String[] postDateList = null;
+            Map<String, String> listChapterTitles = Collections.emptyMap();
             if (hrefs == null) {
                 //ページ番号取得
                 String pageNumString = getExtractText(doc, this.queryMap.get(ExtractId.PAGE_NUM));
@@ -581,16 +598,7 @@ public class WebAozoraConverter
                     if (!extractInfo.hasPattern() || extractInfo.matches(hrefString)) {
                         String chapterHref;
                         try {
-                            if (hrefString.startsWith("http")) {
-                                // すでにフルURLの場合は、そのまま正規化（./ などを除去）
-                                chapterHref = new URI(hrefString).normalize().toString();
-                            } else if (hrefString.charAt(0) == '/') {
-                                // ルート相対パス（/から始まる）をベースURIに対して解決
-                                chapterHref = new URI(baseUri).resolve(hrefString).toString();
-                            } else {
-                                // 相対パス（./ やフォルダ名から始まる）を現在のURLに対して解決
-                                chapterHref = new URI(listBaseUrl).resolve(hrefString).toString();
-                            }
+                            chapterHref = resolveChapterUrl(hrefString, listBaseUrl);
 
                             chapterHrefs.add(chapterHref);
 
@@ -602,6 +610,7 @@ public class WebAozoraConverter
                     }
                 }
 
+                listChapterTitles = getHamelnListChapterTitles(doc, listBaseUrl);
                 postDateList = getPostDateList(doc, this.queryMap.get(ExtractId.CONTENT_UPDATE_LIST));
                 if (postDateList == null && this.queryMap.containsKey(ExtractId.CONTENT_UPDATE_LIST)) {
                     LogAppender.println("CONTENT_UPDATE_LIST : 一覧ページの更新日時情報が取得できません");
@@ -743,7 +752,8 @@ public class WebAozoraConverter
                         File chapterCacheFile = new File(cachePath.getAbsolutePath() + "/" + chapterPath + (chapterPath.endsWith("/") ? "index.html" : ""));
                         //シリーズタイトルを出力
                         Document chapterDoc = Jsoup.parse(chapterCacheFile, null);
-                        String chapterTitle = getExtractText(chapterDoc, this.queryMap.get(ExtractId.CONTENT_CHAPTER));
+                        String chapterTitle = listChapterTitles.get(chapterHref);
+                        if (chapterTitle == null) chapterTitle = getExtractText(chapterDoc, this.queryMap.get(ExtractId.CONTENT_CHAPTER));
                         boolean newChapter = false;
                         if (chapterTitle != null && !preChapterTitle.equals(chapterTitle)) {
                             newChapter = true;
@@ -812,8 +822,225 @@ public class WebAozoraConverter
 		return txtFile;
 	}
 
+	/** ハーメルンの一覧にある章見出しを、各話のURLに対応付ける。 */
+	Map<String, String> getHamelnListChapterTitles(Document doc, String listBaseUrl)
+	{
+		if (!this.baseUri.contains("//syosetu.org")) return Collections.emptyMap();
+		Map<String, String> chapterTitles = new HashMap<String, String>();
+		String currentChapterTitle = null;
+		for (Element item : doc.select(".episode-list__items > li")) {
+			Element chapterTitle = item.selectFirst(".episode-list__chapter-title");
+			if (chapterTitle != null) {
+				currentChapterTitle = chapterTitle.text().trim();
+				continue;
+			}
+			Element href = item.selectFirst("a.episode-list__link");
+			if (currentChapterTitle == null || href == null || href.attr("href").isEmpty()) continue;
+			try {
+				chapterTitles.put(resolveChapterUrl(href.attr("href"), listBaseUrl), currentChapterTitle);
+			} catch (Exception e) {
+				LogAppender.println("章見出しに対応するURLを解析できませんでした : " + href.attr("href"));
+			}
+		}
+		return chapterTitles;
+	}
+
+	private String resolveChapterUrl(String hrefString, String listBaseUrl) throws URISyntaxException
+	{
+		if (hrefString.startsWith("http")) return new URI(hrefString).normalize().toString();
+		if (hrefString.charAt(0) == '/') return new URI(this.baseUri).resolve(hrefString).toString();
+		return new URI(listBaseUrl).resolve(hrefString).toString();
+	}
+
+	/**
+	 * 変換済みのWeb小説テキストを作品内の大見出しごとに分ける。
+	 * 章番号は1始まりで、{@code selectedChapterNumbers} が空なら全章を対象にする。
+	 * 章見出しがない作品では空のリストを返す。
+	 */
+	public static List<ChapterTextFile> splitConvertedTextByChapters(File sourceFile, Set<Integer> selectedChapterNumbers) throws IOException
+	{
+		List<Set<Integer>> chapterGroups = new ArrayList<Set<Integer>>();
+		if (selectedChapterNumbers != null && !selectedChapterNumbers.isEmpty()) {
+			for (Integer chapterNumber : selectedChapterNumbers) chapterGroups.add(Collections.singleton(chapterNumber));
+		}
+		return splitConvertedTextByChapterGroups(sourceFile, chapterGroups);
+	}
+
+	/**
+	 * 章番号の範囲ごとにWeb小説テキストを分ける。空のリストなら各章を1冊ずつ出力する。
+	 * 例: {@code 1-3;4-6} は「1～3章」と「4～6章」の2冊を生成する。
+	 */
+	public static List<ChapterTextFile> splitConvertedTextByChapterGroups(File sourceFile, List<Set<Integer>> chapterGroups) throws IOException
+	{
+		String text = Files.readString(sourceFile.toPath(), StandardCharsets.UTF_8);
+		String chapterMarker = "\n［＃改ページ］\n［＃大見出し］";
+		String footerMarker = "\n［＃改ページ］\n底本： ";
+		int footerIndex = text.lastIndexOf(footerMarker);
+		String footer = footerIndex >= 0 ? text.substring(footerIndex) : "";
+		String body = footerIndex >= 0 ? text.substring(0, footerIndex) : text;
+
+		List<Integer> chapterStarts = new ArrayList<Integer>();
+		int offset = body.indexOf(chapterMarker);
+		while (offset >= 0) {
+			chapterStarts.add(offset);
+			offset = body.indexOf(chapterMarker, offset + chapterMarker.length());
+		}
+		if (chapterStarts.isEmpty()) return Collections.emptyList();
+
+		String header = body.substring(0, chapterStarts.get(0));
+		List<Set<Integer>> groups = chapterGroups == null ? new ArrayList<Set<Integer>>() : new ArrayList<Set<Integer>>(chapterGroups);
+		if (groups.isEmpty()) {
+			for (int i = 0; i < chapterStarts.size(); i++) groups.add(Collections.singleton(i + 1));
+		}
+		List<ChapterTextFile> result = new ArrayList<ChapterTextFile>();
+		int partNumber = 0;
+		for (Set<Integer> group : groups) {
+			if (group == null || group.isEmpty()) continue;
+			SortedSet<Integer> chapterNumbers = new TreeSet<Integer>(group);
+			StringBuilder chapterText = new StringBuilder();
+			String firstChapterTitle = null;
+			String lastChapterTitle = null;
+			for (Integer chapterNumber : chapterNumbers) {
+				if (chapterNumber < 1 || chapterNumber > chapterStarts.size()) {
+					throw new IllegalArgumentException("存在しない章番号が指定されています: " + chapterNumber);
+				}
+				int index = chapterNumber - 1;
+				int start = chapterStarts.get(index);
+				int end = index + 1 < chapterStarts.size() ? chapterStarts.get(index + 1) : body.length();
+				String chapter = body.substring(start, end);
+				String title = getChapterTitle(chapter, chapterNumber);
+				if (firstChapterTitle == null) firstChapterTitle = title;
+				lastChapterTitle = title;
+				chapterText.append(chapter);
+			}
+			partNumber++;
+			int firstNumber = chapterNumbers.first();
+			int lastNumber = chapterNumbers.last();
+			String chapterTitle = firstNumber == lastNumber ? firstChapterTitle : firstChapterTitle + " ～ " + lastChapterTitle;
+			File chapterFile = new File(sourceFile.getParentFile(), String.format("%s_chapters_%03d-%03d.txt", getBaseName(sourceFile.getName()), firstNumber, lastNumber));
+			Files.writeString(chapterFile.toPath(), header + chapterText + footer, StandardCharsets.UTF_8);
+			result.add(new ChapterTextFile(chapterFile, chapterTitle, partNumber));
+		}
+		return result;
+	}
+
+	/**
+	 * 章見出しがないWeb小説を話数の範囲ごとに分ける。
+	 * 例: {@code 1-50;51-100} は「第1～50話」と「第51～100話」の2冊を生成する。
+	 */
+	public static List<ChapterTextFile> splitConvertedTextByEpisodeGroups(File sourceFile, List<Set<Integer>> episodeGroups) throws IOException
+	{
+		String text = Files.readString(sourceFile.toPath(), StandardCharsets.UTF_8);
+		String pageBreakMarker = "\n［＃改ページ］\n";
+		String footerMarker = "\n［＃改ページ］\n底本： ";
+		int footerIndex = text.lastIndexOf(footerMarker);
+		String footer = footerIndex >= 0 ? text.substring(footerIndex) : "";
+		String body = footerIndex >= 0 ? text.substring(0, footerIndex) : text;
+
+		List<Integer> episodeStarts = new ArrayList<Integer>();
+		int offset = body.indexOf(pageBreakMarker);
+		while (offset >= 0) {
+			episodeStarts.add(offset);
+			offset = body.indexOf(pageBreakMarker, offset + pageBreakMarker.length());
+		}
+		if (episodeStarts.isEmpty()) return Collections.emptyList();
+
+		String header = body.substring(0, episodeStarts.get(0));
+		List<ChapterTextFile> result = new ArrayList<ChapterTextFile>();
+		for (Set<Integer> group : episodeGroups) {
+			if (group == null || group.isEmpty()) continue;
+			SortedSet<Integer> episodeNumbers = new TreeSet<Integer>(group);
+			StringBuilder episodeText = new StringBuilder();
+			String firstEpisodeTitle = null;
+			String lastEpisodeTitle = null;
+			for (Integer episodeNumber : episodeNumbers) {
+				if (episodeNumber < 1 || episodeNumber > episodeStarts.size()) {
+					throw new IllegalArgumentException("存在しない話数が指定されています: " + episodeNumber);
+				}
+				int index = episodeNumber - 1;
+				int start = episodeStarts.get(index);
+				int end = index + 1 < episodeStarts.size() ? episodeStarts.get(index + 1) : body.length();
+				String episode = body.substring(start, end);
+				String title = getEpisodeTitle(episode, episodeNumber);
+				if (firstEpisodeTitle == null) firstEpisodeTitle = title;
+				lastEpisodeTitle = title;
+				episodeText.append(episode);
+			}
+			int firstNumber = episodeNumbers.first();
+			int lastNumber = episodeNumbers.last();
+			String episodeTitle = firstNumber == lastNumber ? firstEpisodeTitle : firstEpisodeTitle + " ～ " + lastEpisodeTitle;
+			File episodeFile = new File(sourceFile.getParentFile(), String.format("%s_episodes_%03d-%03d.txt", getBaseName(sourceFile.getName()), firstNumber, lastNumber));
+			Files.writeString(episodeFile.toPath(), header + episodeText + footer, StandardCharsets.UTF_8);
+			result.add(new ChapterTextFile(episodeFile, episodeTitle, result.size() + 1));
+		}
+		return result;
+	}
+
+	/** "1-3;4-6" 形式の分冊範囲を解析する。 */
+	public static List<Set<Integer>> parseChapterGroups(String value)
+	{
+		List<Set<Integer>> groups = new ArrayList<Set<Integer>>();
+		if (value == null || value.trim().isEmpty()) return groups;
+		for (String group : value.split(";")) {
+			Set<Integer> chapterNumbers = parseChapterNumbers(group);
+			if (chapterNumbers.isEmpty()) throw new IllegalArgumentException("空の章範囲は指定できません");
+			groups.add(chapterNumbers);
+		}
+		return groups;
+	}
+
+	/** "1,3-5" 形式の章番号を解析する。 */
+	public static Set<Integer> parseChapterNumbers(String value)
+	{
+		Set<Integer> numbers = new TreeSet<Integer>();
+		if (value == null || value.trim().isEmpty()) return numbers;
+		for (String token : value.split(",")) {
+			String range = token.trim();
+			if (range.isEmpty()) continue;
+			String[] bounds = range.split("-", -1);
+			if (bounds.length > 2) throw new IllegalArgumentException("章番号は 1,3-5 の形式で指定してください");
+			int first = Integer.parseInt(bounds[0].trim());
+			int last = bounds.length == 2 ? Integer.parseInt(bounds[1].trim()) : first;
+			if (first < 1 || last < first) throw new IllegalArgumentException("章番号は1以上の昇順で指定してください");
+			for (int number = first; number <= last; number++) numbers.add(number);
+		}
+		return numbers;
+	}
+
+	private static String getChapterTitle(String chapterText, int chapterNumber)
+	{
+		String startMarker = "［＃大見出し］";
+		String endMarker = "［＃大見出し終わり］";
+		int start = chapterText.indexOf(startMarker);
+		int end = start >= 0 ? chapterText.indexOf(endMarker, start + startMarker.length()) : -1;
+		if (start >= 0 && end >= 0) {
+			String title = chapterText.substring(start + startMarker.length(), end).trim().replaceAll("\\s+", " ");
+			if (!title.isEmpty()) return title;
+		}
+		return "第" + chapterNumber + "章";
+	}
+
+	private static String getEpisodeTitle(String episodeText, int episodeNumber)
+	{
+		String startMarker = "［＃中見出し］";
+		String endMarker = "［＃中見出し終わり］";
+		int start = episodeText.indexOf(startMarker);
+		int end = start >= 0 ? episodeText.indexOf(endMarker, start + startMarker.length()) : -1;
+		if (start >= 0 && end >= 0) {
+			String title = episodeText.substring(start + startMarker.length(), end).trim().replaceAll("\\s+", " ");
+			if (!title.isEmpty()) return title;
+		}
+		return "第" + episodeNumber + "話";
+	}
+
+	private static String getBaseName(String fileName)
+	{
+		int dot = fileName.lastIndexOf('.');
+		return dot > 0 ? fileName.substring(0, dot) : fileName;
+	}
+
 	/** 更新情報の生成と保存 */
-	private HashSet<String> createNoUpdateUrls(File updateInfoFile, String urlString, String listBaseUrl, String contentsUpdate, Elements hrefs, Elements updates) {
+	HashSet<String> createNoUpdateUrls(File updateInfoFile, String urlString, String listBaseUrl, String contentsUpdate, Elements hrefs, Elements updates) {
 		HashMap<String, String> updateStringMap = new HashMap<String, String>();
 
 		if (hrefs == null || updates == null || hrefs.size() != updates.size()) {
@@ -866,12 +1093,11 @@ public class WebAozoraConverter
 			String updateString = updateStringMap.get(hrefString);
 			String html  = updates.get(i).html().replaceAll("\n", " ");
 			if (updateString != null && updateString.equals(html)) {
-				String chapterHref = hrefString;
-				if (!hrefString.startsWith("http")) {
-					if (hrefString.charAt(0) == '/') chapterHref = baseUri+hrefString;
-					else chapterHref = listBaseUrl+hrefString;
+				try {
+					noUpdateUrls.add(resolveChapterUrl(hrefString, listBaseUrl));
+				} catch (URISyntaxException e) {
+					LogAppender.println("更新判定用のURLを解析できませんでした : " + hrefString);
 				}
-				noUpdateUrls.add(chapterHref);
 			}
 		}
 

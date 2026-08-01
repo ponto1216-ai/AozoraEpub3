@@ -110,6 +110,11 @@ Windowsの場合はOperating System：Windows、Architecture：x64、Package Typ
 　（web/ 以下に定義ファイルがあるサイトのみ）
  - 「小説家になろう/小説を読もう！」(＋関連サイト)「FC2小説」「HAMELN」「Arcadia」「novelist.jp」「暁」「カクヨム」「ノベルアップ＋」から取得が可能です。
 
+#### Web小説の章分冊
+　Webタブの「章ごとに分冊」を有効にすると、作品一覧に設定された章・部見出しごとにEPUBを作成します。
+　「指定範囲で分冊」には `1-3;4-6` のように入力します。`;` で区切った範囲ごとに1冊を作成します。
+　章見出しがある作品では章番号、章見出しがない作品では話数として扱うため、`1-50;51-100` と指定すれば第1～50話と第51～100話を別々のEPUBにできます。
+
 #### Wikiページ
 　Wikiで簡単な使い方を公開しています。
 https://github.com/kyukyunyorituryo/AozoraEpub3/wiki/
