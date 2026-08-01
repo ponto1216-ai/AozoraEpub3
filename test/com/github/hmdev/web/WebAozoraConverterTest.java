@@ -21,6 +21,14 @@ public class WebAozoraConverterTest
 		Assert.assertFalse(WebAozoraConverter.shouldPauseAfterDownloads(5, 5, 0));
 	}
 
+	@Test
+	public void recognizesHamelnInlineImageLinks()
+	{
+		Document document = Jsoup.parse("<a name=\"img\" href=\"https://img.syosetu.org/example.png\">挿絵表示</a>");
+		Assert.assertTrue(WebAozoraConverter.isInlineImageLink(document.selectFirst("a")));
+		Assert.assertFalse(WebAozoraConverter.isInlineImageLink(Jsoup.parse("<a href=\"https://example.com\">link</a>").selectFirst("a")));
+	}
+
     private WebAozoraConverter createHamelnConverter() throws Exception
     {
         return WebAozoraConverter.createWebAozoraConverter(

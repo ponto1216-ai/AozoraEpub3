@@ -1018,6 +1018,9 @@ public class WebAozoraConverter
 			else if (node instanceof Element elem) {
                 if ("br".equals(elem.tagName())) {
 					if (elem.nextSibling() != null) bw.append('\n');
+				} else if (isInlineImageLink(elem)) {
+					Element image = new Element("img").attr("src", elem.attr("href"));
+					printImage(bw, image);
 				} else if ("div".equals(elem.tagName())) {
 					if (elem.previousSibling() != null && !isBlockNode(elem.previousSibling())) bw.append('\n');
 					_printNode(bw, node); //子を出力
@@ -1066,6 +1069,11 @@ public class WebAozoraConverter
 		}
 	}
 	/** 前がブロック注記かどうか */
+	static boolean isInlineImageLink(Element element)
+	{
+		return "a".equals(element.tagName()) && "img".equals(element.attr("name")) && !element.attr("href").isEmpty();
+	}
+
 	private boolean isBlockNode(Node node)
 	{
 		if (node instanceof Element elem) {
