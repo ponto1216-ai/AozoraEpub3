@@ -12,6 +12,15 @@ import com.github.hmdev.writer.Epub3Writer;
 
 public class AozoraEpub3ConverterTest
 {
+	@Test
+	public void webNovelEmptyLineModeRemovesSingleBlankLinesAndKeepsAtMostTwo()
+	{
+		Assert.assertEquals(0, AozoraEpub3Converter.getOutputEmptyLineCount(1, 0, Integer.MAX_VALUE, true));
+		Assert.assertEquals(2, AozoraEpub3Converter.getOutputEmptyLineCount(2, 0, Integer.MAX_VALUE, true));
+		Assert.assertEquals(2, AozoraEpub3Converter.getOutputEmptyLineCount(5, 0, Integer.MAX_VALUE, true));
+		Assert.assertEquals(0, AozoraEpub3Converter.getOutputEmptyLineCount(1, 2, 3, false));
+	}
+
 	static AozoraEpub3Converter converter;
 	@Before
 	public void setUp() throws Exception {

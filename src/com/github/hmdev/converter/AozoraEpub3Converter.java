@@ -90,6 +90,8 @@ public class AozoraEpub3Converter
 	int removeEmptyLine = 0;
 	/** 最大空行制限 */
 	int maxEmptyLine = Integer.MAX_VALUE;
+	/** 空行が1行だけなら削除し、2行以上なら最大2行を残す */
+	boolean collapseSingleEmptyLine = false;
 
 	/** 行頭字下げ */
 	boolean forceIndent = false;
@@ -510,6 +512,17 @@ public class AozoraEpub3Converter
 		this.removeEmptyLine = removeEmptyLine;
 		this.maxEmptyLine = maxEmptyLine;
 		if (this.maxEmptyLine == 0) this.maxEmptyLine = Integer.MAX_VALUE;
+	}
+	/** Web小説向けの空行処理を設定する */
+	public void setCollapseSingleEmptyLine(boolean collapseSingleEmptyLine)
+	{
+		this.collapseSingleEmptyLine = collapseSingleEmptyLine;
+	}
+	/** 出力する空行数を求める */
+	static int getOutputEmptyLineCount(int emptyLineCount, int removeEmptyLine, int maxEmptyLine, boolean collapseSingleEmptyLine)
+	{
+		if (collapseSingleEmptyLine) return emptyLineCount == 1 ? 0 : Math.min(2, emptyLineCount);
+		return Math.max(0, Math.min(maxEmptyLine, emptyLineCount - removeEmptyLine));
 	}
 
 	/** 行頭字下げ
@@ -3338,7 +3351,7 @@ public class AozoraEpub3Converter
 		//空行は行数がカウントされているので文字出力前に出力
 		if (this.printEmptyLines > 0) {
 			String br = chukiMap.get("改行")[0];
-			int lines = Math.min(this.maxEmptyLine, this.printEmptyLines-this.removeEmptyLine);
+			int lines = getOutputEmptyLineCount(this.printEmptyLines, this.removeEmptyLine, this.maxEmptyLine, this.collapseSingleEmptyLine);
 			//見出し後3行以内開始の空行は1行は残す
 			if (lastChapterLine >= lineNum-this.printEmptyLines-2) {
 				lines = Math.max(1, lines);

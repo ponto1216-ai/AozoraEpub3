@@ -147,6 +147,7 @@ public class AozoraEpub3
 			boolean coverPageToc = "1".equals(props.getProperty("CoverPageToc"));
 			int removeEmptyLine = 0; try { removeEmptyLine = Integer.parseInt(props.getProperty("RemoveEmptyLine")); } catch (Exception e) {}
 			int maxEmptyLine = 0; try { maxEmptyLine = Integer.parseInt(props.getProperty("MaxEmptyLine")); } catch (Exception e) {}
+			boolean collapseSingleEmptyLine = "1".equals(props.getProperty("CollapseSingleEmptyLine"));
 
 			//画面サイズと画像リサイズ
 			int dispW = 600; try { dispW =Integer.parseInt(props.getProperty("DispW")); } catch (Exception e) {}
@@ -295,6 +296,7 @@ public class AozoraEpub3
 			aozoraConverter.setCommentPrint(commentPrint, commentConvert);
 
 			aozoraConverter.setRemoveEmptyLine(removeEmptyLine, maxEmptyLine);
+			aozoraConverter.setCollapseSingleEmptyLine(collapseSingleEmptyLine);
 
 			//強制改ページ
 			aozoraConverter.setForcePageBreak(forcePageBreakSize, forcePageBreakEmpty, forcePageBreakEmptySize, forcePageBreakChapter, forcePageBreakChapterSize);

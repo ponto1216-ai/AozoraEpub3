@@ -255,6 +255,7 @@ public class AozoraEpub3Applet extends JFrame
 
 	JComboBox<String> jComboxRemoveEmptyLine;
 	JComboBox<String> jComboxMaxEmptyLine;
+	JCheckBox jCheckCollapseSingleEmptyLine;
 
 	JCheckBox jCheckForceIndent;
 
@@ -1675,6 +1676,11 @@ public class AozoraEpub3Applet extends JFrame
 		label = new JLabel("行");
 		label.setBorder(padding2);
 		panel.add(label);
+		jCheckCollapseSingleEmptyLine = new JCheckBox("Web小説向け");
+		jCheckCollapseSingleEmptyLine.setToolTipText("空行1行だけを削除し、連続する空行は最大2行残します。通常の空行設定より優先されます");
+		jCheckCollapseSingleEmptyLine.setFocusPainted(false);
+		jCheckCollapseSingleEmptyLine.setBorder(padding2);
+		panel.add(jCheckCollapseSingleEmptyLine);
 
 		////////////////////////////////
 		//行頭字下げ追加
@@ -3496,6 +3502,7 @@ public class AozoraEpub3Applet extends JFrame
 			int removeEmptyLine = jComboxRemoveEmptyLine.getSelectedIndex();
 			int maxEmptyLine = jComboxMaxEmptyLine.getSelectedIndex();
 			this.aozoraConverter.setRemoveEmptyLine(removeEmptyLine, maxEmptyLine);
+			this.aozoraConverter.setCollapseSingleEmptyLine(this.jCheckCollapseSingleEmptyLine.isSelected());
 
 			//行頭字下げ
 			this.aozoraConverter.setForceIndent(this.jCheckForceIndent.isSelected());
@@ -4749,7 +4756,8 @@ public class AozoraEpub3Applet extends JFrame
 		//空行除去
 		if(props.getProperty("RemoveEmptyLine")!=null){ jComboxRemoveEmptyLine.setSelectedIndex(Integer.parseInt(props.getProperty("RemoveEmptyLine"))); }
 		propValue = props.getProperty("MaxEmptyLine");
-		if(propValue!=null){jComboxMaxEmptyLine.setSelectedIndex(Integer.parseInt(propValue)); } 
+		if(propValue!=null){jComboxMaxEmptyLine.setSelectedIndex(Integer.parseInt(propValue)); }
+		setPropsSelected(jCheckCollapseSingleEmptyLine, props, "CollapseSingleEmptyLine");
 		//行頭字下げ追加
 		setPropsSelected(jCheckForceIndent, props, "ForceIndent");
 		//強制改ページ
@@ -4951,6 +4959,7 @@ public class AozoraEpub3Applet extends JFrame
 		//空行除去
 		props.setProperty("RemoveEmptyLine", ""+this.jComboxRemoveEmptyLine.getSelectedIndex());
 		props.setProperty("MaxEmptyLine", ""+this.jComboxMaxEmptyLine.getSelectedIndex());
+		props.setProperty("CollapseSingleEmptyLine", this.jCheckCollapseSingleEmptyLine.isSelected()?"1":"");
 		//行頭字下げ
 		props.setProperty("ForceIndent", this.jCheckForceIndent.isSelected()?"1":"");
 		//強制改ページ
