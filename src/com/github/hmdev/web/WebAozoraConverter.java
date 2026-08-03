@@ -784,10 +784,11 @@ public class WebAozoraConverter
                             newChapter = true;
                             preChapterTitle = chapterTitle;
                             bw.append("\n［＃改ページ］\n");
-                            bw.append("［＃大見出し］");
+                            // ハーメルンの章タイトルは本文には重ねず、EPUB目次の親項目だけにする。
+                            bw.append(this.baseUri.contains("//syosetu.org") ? "［＃目次のみ大見出し］" : "［＃大見出し］");
                             printText(bw, preChapterTitle);
-//						bw.append('\n');
-                            bw.append("［＃大見出し終わり］\n");
+                            if (!this.baseUri.contains("//syosetu.org")) bw.append("［＃大見出し終わり］");
+                            bw.append('\n');
                             bw.append('\n');
                         }
                         //更新日時を一覧から取得
@@ -798,7 +799,7 @@ public class WebAozoraConverter
                         String subTitle = null;
                         if (subtitles != null && subtitles.size() > chapterIdx) subTitle = subtitles.get(chapterIdx);
 
-                        docToAozoraText(bw, chapterDoc, newChapter, subTitle, postDate);
+                        docToAozoraText(bw, chapterDoc, newChapter, subTitle, postDate, chapterTitle);
                     }
                     chapterIdx++;
                 }
@@ -1150,6 +1151,12 @@ public class WebAozoraConverter
 	 * @param listSubTitle 一覧側で取得したタイトル */
 	private void docToAozoraText(BufferedWriter bw, Document doc, boolean newChapter, String listSubTitle, String postDate) throws IOException
 	{
+		docToAozoraText(bw, doc, newChapter, listSubTitle, postDate, null);
+	}
+
+	/** 各話のHTMLの変換。chapterTitle はハーメルンの一覧章見出し。 */
+	private void docToAozoraText(BufferedWriter bw, Document doc, boolean newChapter, String listSubTitle, String postDate, String chapterTitle) throws IOException
+	{
 		Elements contentDivs = getExtractElements(doc, this.queryMap.get(ExtractId.CONTENT_ARTICLE));
 		if (contentDivs == null || contentDivs.isEmpty()) {
 			LogAppender.println("CONTENT_ARTICLE : 本文が取得できません");
@@ -1157,6 +1164,7 @@ public class WebAozoraConverter
 			if (!newChapter) bw.append("\n［＃改ページ］\n");
 			String subTitle = getExtractText(doc, this.queryMap.get(ExtractId.CONTENT_SUBTITLE));
 			if (subTitle == null) subTitle = listSubTitle; //一覧のタイトルを設定
+			if (this.baseUri.contains("//syosetu.org")) subTitle = removeHamelnChapterTitlePrefix(subTitle, chapterTitle);
 			if (subTitle != null) {
 				bw.append("［＃中見出し］");
 				printText(bw, subTitle);
@@ -1323,6 +1331,17 @@ public class WebAozoraConverter
 	static boolean isInlineImageLink(Element element)
 	{
 		return "a".equals(element.tagName()) && "img".equals(element.attr("name")) && !element.attr("href").isEmpty();
+	}
+
+	/**
+	 * ハーメルンの各話タイトルに一覧の章見出しが接頭辞として重複している場合だけ除去する。
+	 * 章見出しそのものは親目次に残す。
+	 */
+	static String removeHamelnChapterTitlePrefix(String subTitle, String chapterTitle)
+	{
+		if (subTitle == null || chapterTitle == null || !subTitle.startsWith(chapterTitle)) return subTitle;
+		String trimmedTitle = subTitle.substring(chapterTitle.length()).trim();
+		return trimmedTitle.isEmpty() ? subTitle : trimmedTitle;
 	}
 
 	private boolean isBlockNode(Node node)

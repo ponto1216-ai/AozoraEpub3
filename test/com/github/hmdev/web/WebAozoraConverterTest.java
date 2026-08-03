@@ -15,6 +15,13 @@ import org.junit.Test;
 public class WebAozoraConverterTest
 {
 	@Test
+	public void hamelnChapterTitlePrefixIsRemovedFromEpisodeTitle()
+	{
+		Assert.assertEquals("#1　”銀河鉄道ってそりゃあアナタ”",
+				WebAozoraConverter.removeHamelnChapterTitlePrefix("1. Episode of \"M\" #1　”銀河鉄道ってそりゃあアナタ”", "1. Episode of \"M\""));
+		Assert.assertEquals("1. Episode of \"M\"", WebAozoraConverter.removeHamelnChapterTitlePrefix("1. Episode of \"M\"", "1. Episode of \"M\""));
+	}
+	@Test
 	public void detectsOnlyRecognizedImageHeaders() throws Exception
 	{
 		File jpeg = File.createTempFile("web-image", ".jpg");

@@ -11,6 +11,8 @@ public class ChapterLineInfo
 	public int level;
 	
 	public boolean pageBreakChapter = false;
+	/** 本文には出力せず、目次にだけ追加する見出しか */
+	public boolean tocOnly = false;
 	
 	/** 前の行が空行かどうか */
 	public boolean emptyNext;

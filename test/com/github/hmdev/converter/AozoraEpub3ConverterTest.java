@@ -1,13 +1,18 @@
 package com.github.hmdev.converter;
 
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.File;
 import java.io.IOException;
+import java.io.StringReader;
 import java.io.StringWriter;
 
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.Before;
 import com.github.hmdev.info.BookInfo;
+import com.github.hmdev.info.ChapterLineInfo;
+import com.github.hmdev.image.ImageInfoReader;
 import com.github.hmdev.writer.Epub3Writer;
 
 public class AozoraEpub3ConverterTest
@@ -19,6 +24,22 @@ public class AozoraEpub3ConverterTest
 		Assert.assertEquals(2, AozoraEpub3Converter.getOutputEmptyLineCount(2, 0, Integer.MAX_VALUE, true));
 		Assert.assertEquals(2, AozoraEpub3Converter.getOutputEmptyLineCount(5, 0, Integer.MAX_VALUE, true));
 		Assert.assertEquals(0, AozoraEpub3Converter.getOutputEmptyLineCount(1, 2, 3, false));
+	}
+
+	@Test
+	public void tocOnlyHeadingIsRegisteredButIgnoredInBody() throws Exception
+	{
+		converter.setChapterLevel(64, true, true, true, true, true, true, true,
+				false, false, false, false, false, false, "");
+		File source = new File("toc-only-test.txt");
+		BookInfo bookInfo = converter.getBookInfo(source,
+				new BufferedReader(new StringReader("［＃目次のみ大見出し］第一章\n\n本文\n")),
+				new ImageInfoReader(true, source), BookInfo.TitleType.NONE, false);
+		ChapterLineInfo chapter = bookInfo.getChapterLineInfo(0);
+		Assert.assertNotNull(chapter);
+		Assert.assertTrue(chapter.tocOnly);
+		Assert.assertEquals("第一章", chapter.getChapterName());
+		Assert.assertTrue(bookInfo.isIgnoreLine(0));
 	}
 
 	static AozoraEpub3Converter converter;
