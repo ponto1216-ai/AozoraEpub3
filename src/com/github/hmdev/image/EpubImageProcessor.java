@@ -11,11 +11,16 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
+	import java.util.zip.ZipFile;
+
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream;
@@ -33,6 +38,8 @@ public class EpubImageProcessor
 		public int maxWidth;
 		public int maxHeight;
 		public float jpegQuality = 0.8f;
+		public boolean removeImages;
+		public boolean removeImageOnlyPages;
 
 		boolean shouldWritePng()
 		{
@@ -40,7 +47,7 @@ public class EpubImageProcessor
 		}
 		public boolean needsProcessing()
 		{
-			return grayscale || shouldWritePng() || colorDepth > 0 || maxWidth > 0 || maxHeight > 0;
+			return grayscale || shouldWritePng() || colorDepth > 0 || maxWidth > 0 || maxHeight > 0 || removeImages;
 		}
 	}
 
@@ -70,17 +77,20 @@ public class EpubImageProcessor
 				List<ImageEntry> images = collectImageEntries(sourceZip, options);
 				Map<String, String> nameMap = new HashMap<String, String>();
 				for (ImageEntry image : images) nameMap.put(image.sourceName, image.outputName);
+				Set<String> removedPages = options.removeImages && options.removeImageOnlyPages ? findImageOnlyPages(sourceZip, images) : new HashSet<String>();
 
 				for (ZipEntry sourceEntry : java.util.Collections.list(sourceZip.entries())) {
-					if (sourceEntry.isDirectory()) continue;
+					if (sourceEntry.isDirectory() || removedPages.contains(sourceEntry.getName())) continue;
 					ImageEntry image = findImage(images, sourceEntry.getName());
 					String outputName = image == null ? sourceEntry.getName() : image.outputName;
 					if ("mimetype".equals(sourceEntry.getName())) {
 						writeMimetype(sourceZip, sourceEntry, outputZip);
+					} else if (image != null && options.removeImages) {
+						continue;
 					} else {
 						outputZip.putArchiveEntry(new ZipArchiveEntry(outputName));
 						if (image != null) writeProcessedImage(sourceZip, sourceEntry, outputZip, image, options);
-						else if (isTextEntry(sourceEntry.getName())) writeRewrittenText(sourceZip, sourceEntry, outputZip, nameMap);
+						else if (isTextEntry(sourceEntry.getName())) writeRewrittenText(sourceZip, sourceEntry, outputZip, nameMap, images, removedPages, options.removeImages);
 						else copyEntry(sourceZip, sourceEntry, outputZip);
 						outputZip.closeArchiveEntry();
 					}
@@ -103,18 +113,32 @@ public class EpubImageProcessor
 			try (InputStream input = sourceZip.getInputStream(entry)) {
 				imageInfo = ImageInfo.getImageInfo(input);
 			}
-			if (imageInfo == null) continue;
+			if (imageInfo == null && !options.removeImages) continue;
 			String outputName = entry.getName();
 			if (options.shouldWritePng()) {
 				outputName = entry.getName().replaceFirst("(?i)\\.(png|jpe?g|gif|webp)$", ".png");
 				if (!entry.getName().equals(outputName) && names.containsKey(outputName)) {
 					throw new IOException("PNG化後の画像名が重複します: " + outputName);
 				}
-				imageInfo.setOutExt("png");
+				if (imageInfo != null) imageInfo.setOutExt("png");
 			}
 			images.add(new ImageEntry(entry.getName(), outputName, imageInfo));
 		}
 		return images;
+	}
+
+	private static Set<String> findImageOnlyPages(ZipFile sourceZip, List<ImageEntry> images) throws IOException
+	{
+		Set<String> pages = new HashSet<String>();
+		for (ZipEntry entry : java.util.Collections.list(sourceZip.entries())) {
+			if (!entry.isDirectory() && entry.getName().matches("(?i).*\\.(xhtml|html)$")) {
+				String text = new String(readEntry(sourceZip, entry), StandardCharsets.UTF_8);
+				if (!text.matches("(?is).*<(img|image)\\b.*")) continue;
+				String body = text.replaceAll("(?is)<(img|image)\\b[^>]*>", "").replaceAll("(?is)<[^>]+>", "").replace("&nbsp;", "").trim();
+				if (body.isEmpty()) pages.add(entry.getName());
+			}
+		}
+		return pages;
 	}
 
 	private static ImageEntry findImage(List<ImageEntry> images, String name)
@@ -155,18 +179,58 @@ public class EpubImageProcessor
 				0, 0, 0, 0, 0, 0, options.grayscale, options.colorDepth);
 	}
 
-	private static void writeRewrittenText(ZipFile sourceZip, ZipEntry entry, ZipArchiveOutputStream outputZip, Map<String, String> nameMap) throws IOException
+	private static void writeRewrittenText(ZipFile sourceZip, ZipEntry entry, ZipArchiveOutputStream outputZip, Map<String, String> nameMap, List<ImageEntry> images, Set<String> removedPages, boolean removeImages) throws IOException
 	{
 		String text = new String(readEntry(sourceZip, entry), StandardCharsets.UTF_8);
-		for (Map.Entry<String, String> name : nameMap.entrySet()) {
-			String sourceReference = relativeReference(entry.getName(), name.getKey());
-			String outputReference = relativeReference(entry.getName(), name.getValue());
-			text = text.replace(sourceReference, outputReference).replace(name.getKey(), name.getValue());
+		if (removeImages) {
+			text = text.replaceAll("(?is)<(img|image)\\b[^>]*>", "");
+		} else {
+			for (Map.Entry<String, String> name : nameMap.entrySet()) {
+				String sourceReference = relativeReference(entry.getName(), name.getKey());
+				String outputReference = relativeReference(entry.getName(), name.getValue());
+				text = text.replace(sourceReference, outputReference).replace(name.getKey(), name.getValue());
+			}
 		}
 		if (entry.getName().toLowerCase().endsWith(".opf")) {
-			text = text.replaceAll("(?s)(<item\\b(?=[^>]*\\bhref=['\"][^'\"]+\\.png['\"])[^>]*\\bmedia-type=['\"])image/(?:jpeg|gif|webp)(['\"])", "$1image/png$2");
+			if (removeImages || !removedPages.isEmpty()) text = removeManifestItems(text, entry.getName(), images, removedPages, removeImages);
+			else text = text.replaceAll("(?s)(<item\\b(?=[^>]*\\bhref=['\"][^'\"]+\\.png['\"])[^>]*\\bmedia-type=['\"])image/(?:jpeg|gif|webp)(['\"])", "$1image/png$2");
 		}
 		outputZip.write(text.getBytes(StandardCharsets.UTF_8));
+	}
+
+	private static String removeManifestItems(String text, String opfName, List<ImageEntry> images, Set<String> removedPages, boolean removeImages)
+	{
+		Set<String> removedIds = new HashSet<String>();
+		Matcher matcher = Pattern.compile("(?is)<item\\b[^>]*>").matcher(text);
+		StringBuffer output = new StringBuffer();
+		while (matcher.find()) {
+			String item = matcher.group();
+			String href = attribute(item, "href");
+			String id = attribute(item, "id");
+			String target = href == null ? "" : resolveReference(opfName, href);
+			boolean remove = removedPages.contains(target);
+			if (removeImages) for (ImageEntry image : images) if (image.sourceName.equals(target)) remove = true;
+			if (remove) {
+				if (id != null) removedIds.add(id);
+				matcher.appendReplacement(output, "");
+			} else matcher.appendReplacement(output, Matcher.quoteReplacement(item));
+		}
+		matcher.appendTail(output);
+		for (String id : removedIds) output = new StringBuffer(output.toString().replaceAll("(?is)<itemref\\b(?=[^>]*\\bidref=['\"]" + Pattern.quote(id) + "['\"])[^>]*>", ""));
+		return output.toString();
+	}
+
+	private static String attribute(String element, String name)
+	{
+		Matcher matcher = Pattern.compile("(?is)\\b" + name + "\\s*=\\s*['\"]([^'\"]+)['\"]").matcher(element);
+		return matcher.find() ? matcher.group(1) : null;
+	}
+
+	private static String resolveReference(String fromEntry, String reference)
+	{
+		Path parent = Path.of(fromEntry).getParent();
+		Path target = parent == null ? Path.of(reference) : parent.resolve(reference);
+		return target.normalize().toString().replace('\\', '/');
 	}
 
 	private static String relativeReference(String fromEntry, String targetEntry)

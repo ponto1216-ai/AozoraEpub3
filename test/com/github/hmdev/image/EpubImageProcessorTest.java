@@ -48,6 +48,56 @@ public class EpubImageProcessorTest
 		}
 	}
 
+	@Test
+	public void removesImagesAndImageOnlyPages() throws Exception
+	{
+		File source = File.createTempFile("epub-image-remove-source", ".epub");
+		File output = File.createTempFile("epub-image-remove-output", ".epub");
+		try {
+			writeSourceEpub(source);
+			EpubImageProcessor.Options options = new EpubImageProcessor.Options();
+			options.removeImages = true;
+			options.removeImageOnlyPages = true;
+			EpubImageProcessor.process(source, output, options);
+
+			try (ZipFile epub = new ZipFile(output)) {
+				Assert.assertNull(epub.getEntry("OEBPS/images/test.jpg"));
+				Assert.assertNull(epub.getEntry("OEBPS/text/chapter.xhtml"));
+				String opf = new String(epub.getInputStream(epub.getEntry("OEBPS/package.opf")).readAllBytes(), StandardCharsets.UTF_8);
+				Assert.assertFalse(opf.contains("images/test.jpg"));
+			}
+		} finally {
+			Files.deleteIfExists(source.toPath());
+			Files.deleteIfExists(output.toPath());
+		}
+	}
+
+	@Test
+	public void removesImagesWhenPackageFileIsAtEpubRoot() throws Exception
+	{
+		File source = File.createTempFile("epub-root-package-source", ".epub");
+		File output = File.createTempFile("epub-root-package-output", ".epub");
+		try {
+			BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
+			ByteArrayOutputStream imageBytes = new ByteArrayOutputStream();
+			ImageIO.write(image, "jpeg", imageBytes);
+			try (ZipOutputStream epub = new ZipOutputStream(Files.newOutputStream(source.toPath()))) {
+				writeEntry(epub, "mimetype", "application/epub+zip".getBytes(StandardCharsets.US_ASCII));
+				writeEntry(epub, "package.opf", "<package><manifest><item id=\"image\" href=\"image.jpg\" media-type=\"image/jpeg\"/></manifest></package>".getBytes(StandardCharsets.UTF_8));
+				writeEntry(epub, "image.jpg", imageBytes.toByteArray());
+			}
+			EpubImageProcessor.Options options = new EpubImageProcessor.Options();
+			options.removeImages = true;
+			EpubImageProcessor.process(source, output, options);
+			try (ZipFile epub = new ZipFile(output)) {
+				Assert.assertNull(epub.getEntry("image.jpg"));
+			}
+		} finally {
+			Files.deleteIfExists(source.toPath());
+			Files.deleteIfExists(output.toPath());
+		}
+	}
+
 	private void writeSourceEpub(File epubFile) throws Exception
 	{
 		BufferedImage image = new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB);
