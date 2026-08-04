@@ -19,6 +19,33 @@ import org.junit.Test;
 public class EpubImageProcessorTest
 {
 	@Test
+	public void previewsSelectiveImageRemoval() throws Exception
+	{
+		File source = File.createTempFile("epub-image-preview-source", ".epub");
+		try {
+			writeCoverAndIllustrationEpub(source);
+			EpubImageProcessor.Options options = new EpubImageProcessor.Options();
+			options.removeImages = true;
+			options.removeImageOnlyPages = true;
+			options.imageRemovalTarget = EpubImageProcessor.ImageRemovalTarget.ILLUSTRATIONS;
+
+			EpubImageProcessor.Preview preview = EpubImageProcessor.preview(source, options);
+
+			Assert.assertEquals(2, preview.totalImages);
+			Assert.assertEquals(1, preview.coverImages);
+			Assert.assertEquals(1, preview.illustrationImages);
+			Assert.assertEquals(1, preview.chapterLeadingImages);
+			Assert.assertEquals(1, preview.targetImages);
+			Assert.assertEquals(1, preview.removedImageOnlyPages);
+			Assert.assertTrue(preview.coverDetected);
+			Assert.assertNull(preview.warning);
+			Assert.assertEquals(java.util.List.of("OEBPS/images/illustration.jpg"), preview.targetImageNames);
+		} finally {
+			Files.deleteIfExists(source.toPath());
+		}
+	}
+
+	@Test
 	public void convertsExistingEpubImagesAndUpdatesReferences() throws Exception
 	{
 		File source = File.createTempFile("epub-image-source", ".epub");

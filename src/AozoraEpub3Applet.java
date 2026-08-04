@@ -1626,7 +1626,7 @@ public class AozoraEpub3Applet extends JFrame
 		panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 2));
 		tabPanel.add(panel);
 		JButton jButtonEpubImage = new JButton("EPUBを選択して加工開始");
-		jButtonEpubImage.setToolTipText("入力EPUBと保存先を選択して処理を開始します");
+		jButtonEpubImage.setToolTipText("1冊または複数のEPUBを選択して処理を開始します。複数選択時は保存フォルダーを指定します");
 		jButtonEpubImage.setBorder(padding5H3V);
 		jButtonEpubImage.setFocusPainted(false);
 		jButtonEpubImage.addActionListener(e -> processExistingEpub());
@@ -3752,32 +3752,8 @@ public class AozoraEpub3Applet extends JFrame
 		jCheckEpubRemoveImageOnlyPages.setEnabled(!convert);
 	}
 
-	private void processExistingEpub()
+	private EpubImageProcessor.Options createExistingEpubOptions()
 	{
-		if (isRunning()) return;
-		JFileChooser inputChooser = new JFileChooser(currentPath);
-		inputChooser.setDialogTitle("画像を再処理するEPUBを選択");
-		inputChooser.setFileFilter(new FileNameExtensionFilter("EPUBファイル(epub)", "epub"));
-		if (inputChooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
-		File inputFile = inputChooser.getSelectedFile();
-
-		JFileChooser outputChooser = new JFileChooser(inputFile.getParentFile());
-		outputChooser.setDialogTitle("処理後のEPUBの保存先を選択");
-		outputChooser.setFileFilter(new FileNameExtensionFilter("EPUBファイル(epub)", "epub"));
-		String outputSuffix = "_画像最適化.epub";
-		if (jRadioEpubProcessRemove.isSelected()) {
-			outputSuffix = new String[] {"_画像なし.epub", "_挿絵なし.epub", "_表紙なし.epub"}[jComboEpubRemoveTarget.getSelectedIndex()];
-		}
-		outputChooser.setSelectedFile(new File(inputFile.getName().replaceFirst("(?i)\\.epub$", "") + outputSuffix));
-		if (outputChooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
-		File outputFile = outputChooser.getSelectedFile();
-		if (!outputFile.getName().toLowerCase().endsWith(".epub")) outputFile = new File(outputFile.getPath() + ".epub");
-		if (inputFile.equals(outputFile)) {
-			JOptionPane.showMessageDialog(this, "元のEPUBとは別のファイル名を指定してください", "EPUB画像処理", JOptionPane.ERROR_MESSAGE);
-			return;
-		}
-		if (outputFile.exists() && JOptionPane.showConfirmDialog(this, "同名のファイルがあります。上書きしますか？", "EPUB画像処理", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return;
-
 		EpubImageProcessor.Options options = new EpubImageProcessor.Options();
 		options.removeImages = jRadioEpubProcessRemove.isSelected();
 		options.removeImageOnlyPages = jCheckEpubRemoveImageOnlyPages.isSelected();
@@ -3790,39 +3766,203 @@ public class AozoraEpub3Applet extends JFrame
 			options.png = jCheckEpubProcessPng.isSelected();
 			if (imageMode >= 2) options.colorDepth = new int[] {2, 4, 16}[imageMode - 2];
 			options.dither = jCheckEpubProcessDither.isSelected();
+			if (jCheckEpubProcessResize.isSelected()) {
+				options.maxWidth = Integer.parseInt(jTextEpubProcessResizeW.getText());
+				options.maxHeight = Integer.parseInt(jTextEpubProcessResizeH.getText());
+			}
 		}
-		if (jRadioEpubProcessConvert.isSelected() && jCheckEpubProcessResize.isSelected()) {
-			options.maxWidth = Integer.parseInt(jTextEpubProcessResizeW.getText());
-			options.maxHeight = Integer.parseInt(jTextEpubProcessResizeH.getText());
-		}
+		return options;
+	}
+
+	private boolean showExistingEpubPreview(File inputFile, EpubImageProcessor.Options options) throws IOException
+	{
+		EpubImageProcessor.Preview preview = EpubImageProcessor.preview(inputFile, options);
+		StringBuilder text = new StringBuilder();
 		if (options.removeImages) {
-			LogAppender.println("EPUB画像削除の対象: " + new String[] {"すべての画像", "挿絵だけ（表紙は残す）", "表紙だけ（挿絵は残す）"}[jComboEpubRemoveTarget.getSelectedIndex()]);
+			text.append("処理: 画像を削除する - ")
+					.append(new String[] {"すべての画像", "挿絵だけ（表紙は残す）", "表紙だけ（挿絵は残す）"}[jComboEpubRemoveTarget.getSelectedIndex()]);
+			if (options.removeChapterLeadingImages) text.append(" / 各章先頭画像も表紙扱い");
+		} else {
+			text.append("処理: 画像を変換する - ").append(jComboEpubProcessImageMode.getSelectedItem());
+			if (options.dither) text.append(" / ディザリング");
 		}
+		text.append("\n\nEPUB容量: ").append(formatFileSize(inputFile.length()));
+		text.append("\n画像: ").append(preview.totalImages).append("枚（").append(formatFileSize(preview.totalImageBytes)).append("）");
+		text.append("\n表紙として検出: ").append(preview.coverImages).append("枚");
+		text.append("\n挿絵として検出: ").append(preview.illustrationImages).append("枚");
+		text.append("\n各章先頭画像: ").append(preview.chapterLeadingImages).append("枚");
+		text.append("\n処理対象: ").append(preview.targetImages).append("枚（").append(formatFileSize(preview.targetImageBytes)).append("）");
+		if (options.removeImageOnlyPages) text.append("\n削除予定の画像だけのページ: ").append(preview.removedImageOnlyPages).append("ページ");
+		if (preview.estimatedOutputBytes >= 0) text.append("\n処理後の推定容量: 約").append(formatFileSize(preview.estimatedOutputBytes));
+		if (preview.warning != null) text.append("\n\n[警告] ").append(preview.warning);
+		appendPreviewNames(text, "表紙", preview.coverImageNames);
+		appendPreviewNames(text, "各章先頭画像", preview.chapterLeadingImageNames);
+		appendPreviewNames(text, "処理対象", preview.targetImageNames);
+
+		JTextArea previewArea = new JTextArea(text.toString(), 24, 72);
+		previewArea.setEditable(false);
+		previewArea.setCaretPosition(0);
+		previewArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, previewArea.getFont().getSize()));
+		JScrollPane scrollPane = new JScrollPane(previewArea);
+		Object[] choices = {"加工を続ける", "キャンセル"};
+		return JOptionPane.showOptionDialog(this, scrollPane, "処理前プレビュー", JOptionPane.DEFAULT_OPTION,
+				preview.warning == null ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE,
+				null, choices, choices[0]) == 0;
+	}
+
+	private static void appendPreviewNames(StringBuilder text, String title, java.util.List<String> names)
+	{
+		if (names.isEmpty()) return;
+		text.append("\n\n[").append(title).append("]");
+		int count = Math.min(names.size(), 200);
+		for (int i = 0; i < count; i++) text.append("\n").append(names.get(i));
+		if (names.size() > count) text.append("\n...ほか ").append(names.size() - count).append("件");
+	}
+
+	private static String formatFileSize(long bytes)
+	{
+		if (bytes < 1024) return bytes + " B";
+		if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024d);
+		return String.format("%.1f MB", bytes / (1024d * 1024d));
+	}
+
+	private boolean showExistingEpubBatchPreview(File[] inputFiles, EpubImageProcessor.Options options) throws IOException
+	{
+		StringBuilder text = new StringBuilder("一括加工: ").append(inputFiles.length).append("冊\n");
+		long totalBytes = 0;
+		long targetBytes = 0;
+		int totalImages = 0;
+		int targetImages = 0;
+		int warnings = 0;
+		for (File inputFile : inputFiles) {
+			EpubImageProcessor.Preview preview = EpubImageProcessor.preview(inputFile, options);
+			totalBytes += inputFile.length();
+			targetBytes += preview.targetImageBytes;
+			totalImages += preview.totalImages;
+			targetImages += preview.targetImages;
+			if (preview.warning != null) warnings++;
+			text.append("\n").append(inputFile.getName())
+					.append("\n  画像 ").append(preview.totalImages).append("枚 / 処理対象 ").append(preview.targetImages).append("枚")
+					.append(" / 表紙 ").append(preview.coverImages).append("枚 / 挿絵 ").append(preview.illustrationImages).append("枚");
+			if (preview.warning != null) text.append("\n  [警告] ").append(preview.warning);
+		}
+		text.insert(text.indexOf("\n") + 1, "合計容量: " + formatFileSize(totalBytes) + " / 画像 " + totalImages + "枚 / 処理対象 " + targetImages + "枚（" + formatFileSize(targetBytes) + "）\n");
+		JTextArea previewArea = new JTextArea(text.toString(), 24, 72);
+		previewArea.setEditable(false);
+		previewArea.setCaretPosition(0);
+		JScrollPane scrollPane = new JScrollPane(previewArea);
+		Object[] choices = {"一括加工を続ける", "キャンセル"};
+		return JOptionPane.showOptionDialog(this, scrollPane, "一括加工プレビュー", JOptionPane.DEFAULT_OPTION,
+				warnings == 0 ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE,
+				null, choices, choices[0]) == 0;
+	}
+
+	private String getExistingEpubOutputSuffix()
+	{
+		if (!jRadioEpubProcessRemove.isSelected()) return "_画像最適化.epub";
+		return new String[] {"_画像なし.epub", "_挿絵なし.epub", "_表紙なし.epub"}[jComboEpubRemoveTarget.getSelectedIndex()];
+	}
+
+	private void processExistingEpub()
+	{
+		if (isRunning()) return;
+		JFileChooser inputChooser = new JFileChooser(currentPath);
+		inputChooser.setDialogTitle("画像を再処理するEPUBを選択（複数選択可）");
+		inputChooser.setFileFilter(new FileNameExtensionFilter("EPUBファイル(epub)", "epub"));
+		inputChooser.setMultiSelectionEnabled(true);
+		if (inputChooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+		File[] inputFiles = inputChooser.getSelectedFiles();
+		if (inputFiles.length == 0 && inputChooser.getSelectedFile() != null) inputFiles = new File[] {inputChooser.getSelectedFile()};
+		if (inputFiles.length == 0) return;
+		EpubImageProcessor.Options options = createExistingEpubOptions();
 		if (!options.needsProcessing()) {
 			JOptionPane.showMessageDialog(this, "画像モード・PNG化・サイズ縮小のいずれかを指定してください", "既存EPUB加工", JOptionPane.INFORMATION_MESSAGE);
 			return;
 		}
+		try {
+			if (inputFiles.length == 1) {
+				if (!showExistingEpubPreview(inputFiles[0], options)) return;
+			} else if (!showExistingEpubBatchPreview(inputFiles, options)) return;
+		} catch (IOException e) {
+			JOptionPane.showMessageDialog(this, "EPUBを解析できませんでした\n" + e.getMessage(), "処理前プレビュー", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
 
-		final File finalOutputFile = outputFile;
+		String outputSuffix = getExistingEpubOutputSuffix();
+		File[] outputFiles = new File[inputFiles.length];
+		if (inputFiles.length == 1) {
+			JFileChooser outputChooser = new JFileChooser(inputFiles[0].getParentFile());
+			outputChooser.setDialogTitle("処理後のEPUBの保存先を選択");
+			outputChooser.setFileFilter(new FileNameExtensionFilter("EPUBファイル(epub)", "epub"));
+			outputChooser.setSelectedFile(new File(inputFiles[0].getName().replaceFirst("(?i)\\.epub$", "") + outputSuffix));
+			if (outputChooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+			outputFiles[0] = outputChooser.getSelectedFile();
+			if (!outputFiles[0].getName().toLowerCase().endsWith(".epub")) outputFiles[0] = new File(outputFiles[0].getPath() + ".epub");
+		} else {
+			JFileChooser outputChooser = new JFileChooser(inputFiles[0].getParentFile());
+			outputChooser.setDialogTitle("一括加工したEPUBの保存フォルダーを選択");
+			outputChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+			if (outputChooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+			File outputDirectory = outputChooser.getSelectedFile();
+			for (int i = 0; i < inputFiles.length; i++) {
+				outputFiles[i] = new File(outputDirectory, inputFiles[i].getName().replaceFirst("(?i)\\.epub$", "") + outputSuffix);
+			}
+		}
+		for (int i = 0; i < inputFiles.length; i++) {
+			if (inputFiles[i].equals(outputFiles[i])) {
+				JOptionPane.showMessageDialog(this, "元のEPUBとは別の保存先を指定してください\n" + inputFiles[i].getPath(), "EPUB画像処理", JOptionPane.ERROR_MESSAGE);
+				return;
+			}
+		}
+		int existingCount = 0;
+		for (File outputFile : outputFiles) if (outputFile.exists()) existingCount++;
+		boolean overwrite = false;
+		if (existingCount > 0) {
+			int answer = JOptionPane.showConfirmDialog(this, existingCount + "冊の出力ファイルが既にあります。上書きしますか？\n「いいえ」の場合は既存ファイルをスキップします。", "一括加工", JOptionPane.YES_NO_CANCEL_OPTION);
+			if (answer == JOptionPane.CANCEL_OPTION || answer == JOptionPane.CLOSED_OPTION) return;
+			overwrite = answer == JOptionPane.YES_OPTION;
+		}
+
+		if (options.removeImages) {
+			LogAppender.println("EPUB画像削除の対象: " + new String[] {"すべての画像", "挿絵だけ（表紙は残す）", "表紙だけ（挿絵は残す）"}[jComboEpubRemoveTarget.getSelectedIndex()]);
+		}
+		final File[] finalInputFiles = inputFiles;
+		final File[] finalOutputFiles = outputFiles;
+		final boolean finalOverwrite = overwrite;
+		final int[] succeeded = {0};
+		final int[] skipped = {0};
+		final java.util.List<String> failures = new ArrayList<String>();
 		new SwingWorker<Void, Void>() {
-			@Override protected Void doInBackground() throws Exception {
+			@Override protected Void doInBackground() {
 				running = true;
 				setConvertEnabled(false);
-				LogAppender.println("既存EPUBの画像を再処理します: " + inputFile.getPath());
-				EpubImageProcessor.process(inputFile, finalOutputFile, options);
-				LogAppender.println("EPUB画像処理完了: " + finalOutputFile.getPath());
+				for (int i = 0; i < finalInputFiles.length; i++) {
+					File inputFile = finalInputFiles[i];
+					File outputFile = finalOutputFiles[i];
+					if (outputFile.exists() && !finalOverwrite) {
+						skipped[0]++;
+						LogAppender.println("[" + (i + 1) + "/" + finalInputFiles.length + "] 既存ファイルをスキップ: " + outputFile.getPath());
+						continue;
+					}
+					try {
+						LogAppender.println("[" + (i + 1) + "/" + finalInputFiles.length + "] 既存EPUBを加工します: " + inputFile.getPath());
+						EpubImageProcessor.process(inputFile, outputFile, options);
+						succeeded[0]++;
+						LogAppender.println("EPUB画像処理完了: " + outputFile.getPath());
+					} catch (Exception e) {
+						failures.add(inputFile.getName() + ": " + e.getMessage());
+						LogAppender.error("EPUB画像処理エラー: " + inputFile.getName() + " : " + e.getMessage());
+					}
+				}
 				return null;
 			}
 			@Override protected void done() {
 				setConvertEnabled(true);
 				running = false;
-				try {
-					get();
-					JOptionPane.showMessageDialog(AozoraEpub3Applet.this, "画像処理が完了しました\n" + finalOutputFile.getPath(), "EPUB画像処理", JOptionPane.INFORMATION_MESSAGE);
-				} catch (Exception e) {
-					LogAppender.error("EPUB画像処理エラー: " + e.getMessage());
-					JOptionPane.showMessageDialog(AozoraEpub3Applet.this, "EPUB画像処理に失敗しました\n" + e.getMessage(), "EPUB画像処理", JOptionPane.ERROR_MESSAGE);
-				}
+				StringBuilder result = new StringBuilder("一括加工が完了しました\n成功: ").append(succeeded[0]).append("冊\nスキップ: ").append(skipped[0]).append("冊\n失敗: ").append(failures.size()).append("冊");
+				for (String failure : failures) result.append("\n").append(failure);
+				JOptionPane.showMessageDialog(AozoraEpub3Applet.this, result.toString(), "EPUB一括加工",
+						failures.isEmpty() ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE);
 			}
 		}.execute();
 	}

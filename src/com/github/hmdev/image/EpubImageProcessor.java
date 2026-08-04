@@ -82,6 +82,89 @@ public class EpubImageProcessor
 		}
 	}
 
+	public static class Preview
+	{
+		public int totalImages;
+		public int coverImages;
+		public int illustrationImages;
+		public int chapterLeadingImages;
+		public int targetImages;
+		public int removedImageOnlyPages;
+		public long totalImageBytes;
+		public long targetImageBytes;
+		public long estimatedOutputBytes = -1;
+		public boolean coverDetected;
+		public String warning;
+		public List<String> coverImageNames = List.of();
+		public List<String> chapterLeadingImageNames = List.of();
+		public List<String> targetImageNames = List.of();
+	}
+
+	public static Preview preview(File sourceFile, Options options) throws IOException
+	{
+		if (!sourceFile.isFile()) throw new IOException("EPUBファイルがありません: " + sourceFile.getPath());
+		try (ZipFile sourceZip = new ZipFile(sourceFile)) {
+			List<ImageEntry> images = collectImageEntries(sourceZip, options);
+			CoverReferences declaredCover = findCoverReferences(sourceZip, images, false);
+			CoverReferences coverWithLeading = findCoverReferences(sourceZip, images, true);
+			Set<String> chapterLeading = new HashSet<String>(coverWithLeading.imageNames);
+			chapterLeading.removeAll(declaredCover.imageNames);
+
+			CoverReferences effectiveCover = declaredCover;
+			if (options.removeChapterLeadingImages) {
+				effectiveCover = new CoverReferences();
+				effectiveCover.imageNames.addAll(declaredCover.imageNames);
+				effectiveCover.imageNames.addAll(chapterLeading);
+				effectiveCover.pageNames.addAll(declaredCover.pageNames);
+			}
+
+			List<ImageEntry> targets = options.removeImages ? selectRemovedImages(images, effectiveCover, options) : new ArrayList<ImageEntry>(images);
+			Preview preview = new Preview();
+			preview.totalImages = images.size();
+			preview.coverImages = declaredCover.imageNames.size();
+			preview.illustrationImages = Math.max(0, images.size() - preview.coverImages);
+			preview.chapterLeadingImages = chapterLeading.size();
+			preview.targetImages = targets.size();
+			preview.coverDetected = !declaredCover.isEmpty();
+			preview.coverImageNames = sortedNames(declaredCover.imageNames);
+			preview.chapterLeadingImageNames = sortedNames(chapterLeading);
+			preview.targetImageNames = sortedImageNames(targets);
+			for (ImageEntry image : images) {
+				ZipEntry entry = sourceZip.getEntry(image.sourceName);
+				if (entry != null && entry.getSize() > 0) preview.totalImageBytes += entry.getSize();
+			}
+			for (ImageEntry image : targets) {
+				ZipEntry entry = sourceZip.getEntry(image.sourceName);
+				if (entry != null && entry.getSize() > 0) preview.targetImageBytes += entry.getSize();
+				if (options.removeImages && entry != null && entry.getCompressedSize() > 0) {
+					if (preview.estimatedOutputBytes < 0) preview.estimatedOutputBytes = sourceFile.length();
+					preview.estimatedOutputBytes -= entry.getCompressedSize();
+				}
+			}
+			if (preview.estimatedOutputBytes >= 0) preview.estimatedOutputBytes = Math.max(0, preview.estimatedOutputBytes);
+			if (options.removeImages && options.removeImageOnlyPages) preview.removedImageOnlyPages = findImageOnlyPages(sourceZip, targets).size();
+			if (options.removeImages && options.imageRemovalTarget != ImageRemovalTarget.ALL && effectiveCover.isEmpty()) {
+				preview.warning = "表紙情報を検出できないため、この設定では処理できません";
+			}
+			return preview;
+		}
+	}
+
+	private static List<String> sortedNames(Set<String> names)
+	{
+		List<String> sorted = new ArrayList<String>(names);
+		java.util.Collections.sort(sorted);
+		return List.copyOf(sorted);
+	}
+
+	private static List<String> sortedImageNames(List<ImageEntry> images)
+	{
+		List<String> names = new ArrayList<String>();
+		for (ImageEntry image : images) names.add(image.sourceName);
+		java.util.Collections.sort(names);
+		return List.copyOf(names);
+	}
+
 	public static void process(File sourceFile, File outputFile, Options options) throws IOException
 	{
 		if (!sourceFile.isFile()) throw new IOException("EPUBファイルがありません: " + sourceFile.getPath());
