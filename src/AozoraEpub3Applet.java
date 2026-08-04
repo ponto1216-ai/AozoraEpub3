@@ -222,6 +222,8 @@ public class AozoraEpub3Applet extends JFrame
 	JCheckBox jCheckImageDither;
 	JRadioButton jRadioEpubProcessConvert;
 	JRadioButton jRadioEpubProcessRemove;
+	JComboBox<String> jComboEpubProcessPreset;
+	boolean applyingEpubProcessPreset;
 	JComboBox<String> jComboEpubProcessImageMode;
 	JCheckBox jCheckEpubProcessDither;
 	JCheckBox jCheckEpubProcessPng;
@@ -1557,6 +1559,16 @@ public class AozoraEpub3Applet extends JFrame
 		jTabbedPane.addTab("既存EPUB加工", epubIcon, tabPanel);
 
 		panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
+		panel.setBorder(new NarrowTitledBorder("加工プリセット"));
+		tabPanel.add(panel);
+		label = new JLabel("設定:");
+		panel.add(label);
+		jComboEpubProcessPreset = new JComboBox<String>(new String[] {
+				"カスタム", "Yomuka向け（4階調・ディザ・PNG）", "グレースケールPNG", "挿絵なし（表紙を残す）", "表紙なし（各章先頭画像も削除）", "画像なし"});
+		jComboEpubProcessPreset.setToolTipText("選ぶと既存EPUB加工の設定をまとめて切り替えます。手動で変更した場合はカスタムとして扱います");
+		panel.add(jComboEpubProcessPreset);
+
+		panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
 		panel.setBorder(new NarrowTitledBorder("処理内容"));
 		tabPanel.add(panel);
 		buttonGroup = new ButtonGroup();
@@ -1632,11 +1644,16 @@ public class AozoraEpub3Applet extends JFrame
 		jButtonEpubImage.addActionListener(e -> processExistingEpub());
 		panel.add(jButtonEpubImage);
 
-		jRadioEpubProcessConvert.addChangeListener(e -> updateEpubProcessControls());
-		jRadioEpubProcessRemove.addChangeListener(e -> updateEpubProcessControls());
-		jComboEpubProcessImageMode.addActionListener(e -> updateEpubProcessControls());
-		jComboEpubRemoveTarget.addActionListener(e -> updateEpubProcessControls());
-		jCheckEpubProcessResize.addChangeListener(e -> updateEpubProcessControls());
+		jComboEpubProcessPreset.addActionListener(e -> applyEpubProcessPreset());
+		jRadioEpubProcessConvert.addChangeListener(e -> { markEpubProcessPresetCustom(); updateEpubProcessControls(); });
+		jRadioEpubProcessRemove.addChangeListener(e -> { markEpubProcessPresetCustom(); updateEpubProcessControls(); });
+		jComboEpubProcessImageMode.addActionListener(e -> { markEpubProcessPresetCustom(); updateEpubProcessControls(); });
+		jComboEpubRemoveTarget.addActionListener(e -> { markEpubProcessPresetCustom(); updateEpubProcessControls(); });
+		jCheckEpubProcessResize.addChangeListener(e -> { markEpubProcessPresetCustom(); updateEpubProcessControls(); });
+		jCheckEpubProcessDither.addChangeListener(e -> markEpubProcessPresetCustom());
+		jCheckEpubProcessPng.addChangeListener(e -> markEpubProcessPresetCustom());
+		jCheckEpubRemoveChapterLeadingImages.addChangeListener(e -> markEpubProcessPresetCustom());
+		jCheckEpubRemoveImageOnlyPages.addChangeListener(e -> markEpubProcessPresetCustom());
 		updateEpubProcessControls();
 
 		////////////////////////////////////////////////////////////////
@@ -3750,6 +3767,38 @@ public class AozoraEpub3Applet extends JFrame
 		jComboEpubRemoveTarget.setEnabled(!convert);
 		jCheckEpubRemoveChapterLeadingImages.setEnabled(!convert && jComboEpubRemoveTarget.getSelectedIndex() == 2);
 		jCheckEpubRemoveImageOnlyPages.setEnabled(!convert);
+	}
+
+	private void applyEpubProcessPreset()
+	{
+		if (applyingEpubProcessPreset) return;
+		int preset = jComboEpubProcessPreset.getSelectedIndex();
+		if (preset == 0) return;
+		applyingEpubProcessPreset = true;
+		try {
+			if (preset == 1 || preset == 2) {
+				jRadioEpubProcessConvert.setSelected(true);
+				jComboEpubProcessImageMode.setSelectedIndex(preset == 1 ? 3 : 1);
+				jCheckEpubProcessDither.setSelected(preset == 1);
+				jCheckEpubProcessPng.setSelected(true);
+				jCheckEpubProcessResize.setSelected(false);
+			} else {
+				jRadioEpubProcessRemove.setSelected(true);
+				jComboEpubRemoveTarget.setSelectedIndex(preset == 3 ? 1 : (preset == 4 ? 2 : 0));
+				jCheckEpubRemoveChapterLeadingImages.setSelected(preset == 4);
+				jCheckEpubRemoveImageOnlyPages.setSelected(false);
+			}
+		} finally {
+			applyingEpubProcessPreset = false;
+		}
+		updateEpubProcessControls();
+	}
+
+	private void markEpubProcessPresetCustom()
+	{
+		if (!applyingEpubProcessPreset && jComboEpubProcessPreset != null && jComboEpubProcessPreset.getSelectedIndex() != 0) {
+			jComboEpubProcessPreset.setSelectedIndex(0);
+		}
 	}
 
 	private EpubImageProcessor.Options createExistingEpubOptions()
