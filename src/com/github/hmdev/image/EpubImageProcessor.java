@@ -30,6 +30,8 @@ import com.github.hmdev.info.ImageInfo;
 /** AozoraEpub3が出力したEPUBの画像を再処理する */
 public class EpubImageProcessor
 {
+	public enum ImageRemovalTarget { ALL, ILLUSTRATIONS, COVER }
+
 	public static class Options
 	{
 		public boolean grayscale;
@@ -40,6 +42,9 @@ public class EpubImageProcessor
 		public float jpegQuality = 0.8f;
 		public boolean removeImages;
 		public boolean removeImageOnlyPages;
+		public ImageRemovalTarget imageRemovalTarget = ImageRemovalTarget.ALL;
+		/** 各本文ページの先頭画像を、シリーズ内の各話表紙として扱う。 */
+		public boolean removeChapterLeadingImages;
 
 		boolean shouldWritePng()
 		{
@@ -65,6 +70,17 @@ public class EpubImageProcessor
 		}
 	}
 
+	static class CoverReferences
+	{
+		final Set<String> imageNames = new HashSet<String>();
+		final Set<String> pageNames = new HashSet<String>();
+
+		boolean isEmpty()
+		{
+			return imageNames.isEmpty() && pageNames.isEmpty();
+		}
+	}
+
 	public static void process(File sourceFile, File outputFile, Options options) throws IOException
 	{
 		if (!sourceFile.isFile()) throw new IOException("EPUBファイルがありません: " + sourceFile.getPath());
@@ -77,7 +93,14 @@ public class EpubImageProcessor
 				List<ImageEntry> images = collectImageEntries(sourceZip, options);
 				Map<String, String> nameMap = new HashMap<String, String>();
 				for (ImageEntry image : images) nameMap.put(image.sourceName, image.outputName);
-				Set<String> removedPages = options.removeImages && options.removeImageOnlyPages ? findImageOnlyPages(sourceZip, images) : new HashSet<String>();
+				CoverReferences coverReferences = options.removeImages ? findCoverReferences(sourceZip, images, options.removeChapterLeadingImages) : new CoverReferences();
+				if (options.removeImages && options.imageRemovalTarget != ImageRemovalTarget.ALL && coverReferences.isEmpty()) {
+					throw new IOException("表紙情報を検出できないため、挿絵／表紙だけの削除は実行しませんでした");
+				}
+				List<ImageEntry> removedImages = options.removeImages ? selectRemovedImages(images, coverReferences, options) : new ArrayList<ImageEntry>();
+				List<ImageEntry> rewrittenImages = options.removeImages ? removedImages : images;
+				Set<String> removedPages = options.removeImages && options.removeImageOnlyPages ? findImageOnlyPages(sourceZip, removedImages) : new HashSet<String>();
+				if (options.removeImages && options.imageRemovalTarget == ImageRemovalTarget.COVER) removedPages.addAll(coverReferences.pageNames);
 
 				for (ZipEntry sourceEntry : java.util.Collections.list(sourceZip.entries())) {
 					if (sourceEntry.isDirectory() || removedPages.contains(sourceEntry.getName())) continue;
@@ -85,12 +108,12 @@ public class EpubImageProcessor
 					String outputName = image == null ? sourceEntry.getName() : image.outputName;
 					if ("mimetype".equals(sourceEntry.getName())) {
 						writeMimetype(sourceZip, sourceEntry, outputZip);
-					} else if (image != null && options.removeImages) {
+					} else if (image != null && containsImage(removedImages, sourceEntry.getName())) {
 						continue;
 					} else {
 						outputZip.putArchiveEntry(new ZipArchiveEntry(outputName));
 						if (image != null) writeProcessedImage(sourceZip, sourceEntry, outputZip, image, options);
-						else if (isTextEntry(sourceEntry.getName())) writeRewrittenText(sourceZip, sourceEntry, outputZip, nameMap, images, removedPages, options.removeImages);
+						else if (isTextEntry(sourceEntry.getName())) writeRewrittenText(sourceZip, sourceEntry, outputZip, nameMap, rewrittenImages, removedPages, options.removeImages);
 						else copyEntry(sourceZip, sourceEntry, outputZip);
 						outputZip.closeArchiveEntry();
 					}
@@ -100,6 +123,41 @@ public class EpubImageProcessor
 		} finally {
 			Files.deleteIfExists(temporaryFile.toPath());
 		}
+	}
+
+	private static List<ImageEntry> selectRemovedImages(List<ImageEntry> images, CoverReferences coverReferences, Options options)
+	{
+		List<ImageEntry> removed = new ArrayList<ImageEntry>();
+		for (ImageEntry image : images) {
+			boolean cover = coverReferences.imageNames.contains(image.sourceName);
+			if (options.imageRemovalTarget == ImageRemovalTarget.ALL ||
+					(options.imageRemovalTarget == ImageRemovalTarget.ILLUSTRATIONS && !cover) ||
+					(options.imageRemovalTarget == ImageRemovalTarget.COVER && cover)) removed.add(image);
+		}
+		return removed;
+	}
+
+	private static boolean containsImage(List<ImageEntry> images, String name)
+	{
+		return findImage(images, name) != null;
+	}
+
+	/**
+	 * 既存の画像変換で、実体だけPNG化され参照がJPGのままになったEPUBも扱えるようにする。
+	 */
+	private static ImageEntry findReferencedImage(List<ImageEntry> images, String name)
+	{
+		ImageEntry exact = findImage(images, name);
+		if (exact != null) return exact;
+		String stem = imageStem(name);
+		if (stem == null) return null;
+		for (ImageEntry image : images) if (stem.equals(imageStem(image.sourceName))) return image;
+		return null;
+	}
+
+	private static String imageStem(String name)
+	{
+		return name.matches("(?i).*\\.(png|jpe?g|gif|webp)$") ? name.replaceFirst("(?i)\\.(png|jpe?g|gif|webp)$", "") : null;
 	}
 
 	private static List<ImageEntry> collectImageEntries(ZipFile sourceZip, Options options) throws IOException
@@ -127,18 +185,115 @@ public class EpubImageProcessor
 		return images;
 	}
 
+	private static CoverReferences findCoverReferences(ZipFile sourceZip, List<ImageEntry> images, boolean includeChapterLeadingImages) throws IOException
+	{
+		CoverReferences references = new CoverReferences();
+		for (ZipEntry entry : java.util.Collections.list(sourceZip.entries())) {
+			if (entry.isDirectory() || !entry.getName().toLowerCase().endsWith(".opf")) continue;
+			String opf = new String(readEntry(sourceZip, entry), StandardCharsets.UTF_8);
+			Map<String, String> manifest = new HashMap<String, String>();
+			Matcher itemMatcher = Pattern.compile("(?is)<item\\b[^>]*>").matcher(opf);
+			while (itemMatcher.find()) {
+				String item = itemMatcher.group();
+				String id = attribute(item, "id");
+				String href = attribute(item, "href");
+				if (id != null && href != null) {
+					String target = resolveReference(entry.getName(), href);
+					manifest.put(id, target);
+					String properties = attribute(item, "properties");
+					if (properties != null && Pattern.compile("(?:^|\\s)cover-image(?:\\s|$)").matcher(properties).find()) references.imageNames.add(target);
+				}
+			}
+			Matcher legacyCover = Pattern.compile("(?is)<meta\\b(?=[^>]*\\bname=['\"]cover['\"])[^>]*>").matcher(opf);
+			while (legacyCover.find()) {
+				String id = attribute(legacyCover.group(), "content");
+				if (id != null && manifest.containsKey(id)) references.imageNames.add(manifest.get(id));
+			}
+			Matcher guideCover = Pattern.compile("(?is)<reference\\b(?=[^>]*\\btype=['\"]cover['\"])[^>]*>").matcher(opf);
+			while (guideCover.find()) {
+				String href = attribute(guideCover.group(), "href");
+				if (href != null) references.pageNames.add(resolveReference(entry.getName(), href));
+			}
+			if (includeChapterLeadingImages) addSpineLeadingImages(opf, entry.getName(), manifest, sourceZip, images, references.imageNames);
+		}
+		for (String pageName : new HashSet<String>(references.pageNames)) {
+			ZipEntry page = sourceZip.getEntry(pageName);
+			if (page != null) references.imageNames.addAll(findReferencedImages(pageName, new String(readEntry(sourceZip, page), StandardCharsets.UTF_8), images));
+		}
+		return references;
+	}
+
+	private static void addSpineLeadingImages(String opf, String opfName, Map<String, String> manifest, ZipFile sourceZip, List<ImageEntry> images, Set<String> coverImages) throws IOException
+	{
+		Matcher spineMatcher = Pattern.compile("(?is)<spine\\b[^>]*>(.*?)</spine>").matcher(opf);
+		if (!spineMatcher.find()) return;
+		Matcher itemRefMatcher = Pattern.compile("(?is)<itemref\\b[^>]*>").matcher(spineMatcher.group(1));
+		while (itemRefMatcher.find()) {
+			String id = attribute(itemRefMatcher.group(), "idref");
+			String pageName = id == null ? null : manifest.get(id);
+			if (pageName == null || !pageName.matches("(?i).*\\.(xhtml|html)$")) continue;
+			ZipEntry page = sourceZip.getEntry(pageName);
+			if (page == null) continue;
+			String text = new String(readEntry(sourceZip, page), StandardCharsets.UTF_8);
+			Matcher imageMatcher = Pattern.compile("(?is)<(img|image)\\b[^>]*>").matcher(text);
+			if (!imageMatcher.find()) continue;
+			String tag = imageMatcher.group();
+			String reference = attribute(tag, "src");
+			if (reference == null) reference = attribute(tag, "href");
+			if (reference == null) reference = attribute(tag, "xlink:href");
+			if (reference != null) {
+				String target = resolveReference(pageName, reference);
+				if (containsImage(images, target)) coverImages.add(target);
+			}
+		}
+	}
+
 	private static Set<String> findImageOnlyPages(ZipFile sourceZip, List<ImageEntry> images) throws IOException
 	{
 		Set<String> pages = new HashSet<String>();
 		for (ZipEntry entry : java.util.Collections.list(sourceZip.entries())) {
 			if (!entry.isDirectory() && entry.getName().matches("(?i).*\\.(xhtml|html)$")) {
 				String text = new String(readEntry(sourceZip, entry), StandardCharsets.UTF_8);
-				if (!text.matches("(?is).*<(img|image)\\b.*")) continue;
-				String body = text.replaceAll("(?is)<(img|image)\\b[^>]*>", "").replaceAll("(?is)<[^>]+>", "").replace("&nbsp;", "").trim();
+				if (findReferencedImages(entry.getName(), text, images).isEmpty()) continue;
+				String body = removeImageTags(entry.getName(), text, images).replaceAll("(?is)<[^>]+>", "").replace("&nbsp;", "").trim();
 				if (body.isEmpty()) pages.add(entry.getName());
 			}
 		}
 		return pages;
+	}
+
+	private static Set<String> findReferencedImages(String entryName, String text, List<ImageEntry> images)
+	{
+		Set<String> referenced = new HashSet<String>();
+		Matcher matcher = Pattern.compile("(?is)<(img|image)\\b[^>]*>").matcher(text);
+		while (matcher.find()) {
+			String tag = matcher.group();
+			String reference = attribute(tag, "src");
+			if (reference == null) reference = attribute(tag, "href");
+			if (reference == null) reference = attribute(tag, "xlink:href");
+			if (reference != null) {
+				String target = resolveReference(entryName, reference);
+				ImageEntry image = findReferencedImage(images, target);
+				if (image != null) referenced.add(image.sourceName);
+			}
+		}
+		return referenced;
+	}
+
+	private static String removeImageTags(String entryName, String text, List<ImageEntry> images)
+	{
+		Matcher matcher = Pattern.compile("(?is)<(img|image)\\b[^>]*>").matcher(text);
+		StringBuffer output = new StringBuffer();
+		while (matcher.find()) {
+			String tag = matcher.group();
+			String reference = attribute(tag, "src");
+			if (reference == null) reference = attribute(tag, "href");
+			if (reference == null) reference = attribute(tag, "xlink:href");
+			if (reference != null && findReferencedImage(images, resolveReference(entryName, reference)) != null) matcher.appendReplacement(output, "");
+			else matcher.appendReplacement(output, Matcher.quoteReplacement(tag));
+		}
+		matcher.appendTail(output);
+		return output.toString();
 	}
 
 	private static ImageEntry findImage(List<ImageEntry> images, String name)
@@ -183,7 +338,7 @@ public class EpubImageProcessor
 	{
 		String text = new String(readEntry(sourceZip, entry), StandardCharsets.UTF_8);
 		if (removeImages) {
-			text = text.replaceAll("(?is)<(img|image)\\b[^>]*>", "");
+			text = removeImageTags(entry.getName(), text, images);
 		} else {
 			for (Map.Entry<String, String> name : nameMap.entrySet()) {
 				String sourceReference = relativeReference(entry.getName(), name.getKey());
@@ -209,7 +364,7 @@ public class EpubImageProcessor
 			String id = attribute(item, "id");
 			String target = href == null ? "" : resolveReference(opfName, href);
 			boolean remove = removedPages.contains(target);
-			if (removeImages) for (ImageEntry image : images) if (image.sourceName.equals(target)) remove = true;
+			if (removeImages && findReferencedImage(images, target) != null) remove = true;
 			if (remove) {
 				if (id != null) removedIds.add(id);
 				matcher.appendReplacement(output, "");
