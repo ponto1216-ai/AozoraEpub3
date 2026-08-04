@@ -75,6 +75,7 @@ import javax.swing.text.JTextComponent;
 import javax.swing.text.TextAction;
 
 import com.github.hmdev.converter.AozoraEpub3Converter;
+import com.github.hmdev.image.EpubImageProcessor;
 import com.github.hmdev.image.ImageInfoReader;
 import com.github.hmdev.info.BookInfo;
 import com.github.hmdev.info.BookInfoHistory;
@@ -988,6 +989,12 @@ public class AozoraEpub3Applet extends JFrame
 		jButtonFile.setFocusPainted(false);
 		jButtonFile.addActionListener(new FileChooserListener(this));
 		panel2.add(jButtonFile);
+		JButton jButtonEpubImage = new JButton("EPUB画像処理");
+		jButtonEpubImage.setToolTipText("既存EPUBの画像を、現在の画像変換設定で再処理します");
+		jButtonEpubImage.setBorder(padding5H3V);
+		jButtonEpubImage.setFocusPainted(false);
+		jButtonEpubImage.addActionListener(e -> processExistingEpub());
+		panel2.add(jButtonEpubImage);
 		panel.add(panel2);
 
 		////////////////////////////////////////////////////////////////
@@ -3621,6 +3628,64 @@ public class AozoraEpub3Applet extends JFrame
 		////////////////////////////////
 		System.gc();
 
+	}
+
+	private void processExistingEpub()
+	{
+		if (isRunning()) return;
+		JFileChooser inputChooser = new JFileChooser(currentPath);
+		inputChooser.setDialogTitle("画像を再処理するEPUBを選択");
+		inputChooser.setFileFilter(new FileNameExtensionFilter("EPUBファイル(epub)", "epub"));
+		if (inputChooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+		File inputFile = inputChooser.getSelectedFile();
+
+		JFileChooser outputChooser = new JFileChooser(inputFile.getParentFile());
+		outputChooser.setDialogTitle("処理後のEPUBの保存先を選択");
+		outputChooser.setFileFilter(new FileNameExtensionFilter("EPUBファイル(epub)", "epub"));
+		outputChooser.setSelectedFile(new File(inputFile.getName().replaceFirst("(?i)\\.epub$", "") + "_画像最適化.epub"));
+		if (outputChooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+		File outputFile = outputChooser.getSelectedFile();
+		if (!outputFile.getName().toLowerCase().endsWith(".epub")) outputFile = new File(outputFile.getPath() + ".epub");
+		if (inputFile.equals(outputFile)) {
+			JOptionPane.showMessageDialog(this, "元のEPUBとは別のファイル名を指定してください", "EPUB画像処理", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		if (outputFile.exists() && JOptionPane.showConfirmDialog(this, "同名のファイルがあります。上書きしますか？", "EPUB画像処理", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return;
+
+		EpubImageProcessor.Options options = new EpubImageProcessor.Options();
+		options.grayscale = jCheckImageGrayscale.isSelected();
+		options.png = jCheckImagePng.isSelected();
+		options.colorDepth = jCheckImageColorDepth.isSelected() ? new int[] {2, 4, 16}[jComboImageColorDepth.getSelectedIndex()] : 0;
+		if (jCheckResizeW.isSelected()) options.maxWidth = Integer.parseInt(jTextResizeNumW.getText());
+		if (jCheckResizeH.isSelected()) options.maxHeight = Integer.parseInt(jTextResizeNumH.getText());
+		options.jpegQuality = Integer.parseInt(jTextJpegQuality.getText()) / 100f;
+		if (!options.needsProcessing()) {
+			JOptionPane.showMessageDialog(this, "グレースケール化・PNG化・階調削減・画像縮小のいずれかを有効にしてください", "EPUB画像処理", JOptionPane.INFORMATION_MESSAGE);
+			return;
+		}
+
+		final File finalOutputFile = outputFile;
+		new SwingWorker<Void, Void>() {
+			@Override protected Void doInBackground() throws Exception {
+				running = true;
+				setConvertEnabled(false);
+				LogAppender.println("既存EPUBの画像を再処理します: " + inputFile.getPath());
+				EpubImageProcessor.process(inputFile, finalOutputFile, options);
+				LogAppender.println("EPUB画像処理完了: " + finalOutputFile.getPath());
+				return null;
+			}
+			@Override protected void done() {
+				setConvertEnabled(true);
+				running = false;
+				try {
+					get();
+					JOptionPane.showMessageDialog(AozoraEpub3Applet.this, "画像処理が完了しました\n" + finalOutputFile.getPath(), "EPUB画像処理", JOptionPane.INFORMATION_MESSAGE);
+				} catch (Exception e) {
+					LogAppender.error("EPUB画像処理エラー: " + e.getMessage());
+					JOptionPane.showMessageDialog(AozoraEpub3Applet.this, "EPUB画像処理に失敗しました\n" + e.getMessage(), "EPUB画像処理", JOptionPane.ERROR_MESSAGE);
+				}
+			}
+		}.execute();
 	}
 	/** 複数のプレーンテキストを、ファイルごとの大見出しを付けて一時ファイルに結合する。 */
 	static File createMergedTextFile(File[] srcFiles, File dstPath) throws IOException
