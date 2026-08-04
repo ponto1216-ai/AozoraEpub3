@@ -202,6 +202,15 @@ public class WebAozoraConverterTest
     }
 
     @Test
+    public void extractsUnlinkedHamelnAuthorFromItemprop() throws Exception
+    {
+        WebAozoraConverter converter = createHamelnConverter();
+        Document document = Jsoup.parse("<main id=\"maind\"><div align=\"right\">作者：<span itemprop=\"author\">HLNF会長</span></div><div class=\"ss\"><a>作品タグ</a></div></main>");
+        Assert.assertEquals("HLNF会長", converter.getExtractText(document,
+            converter.queryMap.get(ExtractInfo.ExtractId.AUTHOR)));
+    }
+
+    @Test
     public void extractsHamelnArticleSections() throws Exception
     {
         WebAozoraConverter converter = createHamelnConverter();

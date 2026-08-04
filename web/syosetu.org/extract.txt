@@ -15,8 +15,8 @@ COOKIE	over18=off
 #SERIES
 ## タイトル
 TITLE	span[itemprop="name"]:0,#maind .ss span:0
-## 著者
-AUTHOR	#maind .ss a:0
+## 著者（リンクのない匿名作者は itemprop="author" を利用）
+AUTHOR	div[align="right"] a:0,div[align="right"] span[itemprop="author"]:0,#maind .ss a:0
 ## 説明
 DESCRIPTION	#maind .ss:1
 
