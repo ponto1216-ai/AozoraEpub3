@@ -142,7 +142,7 @@ public class ImageUtils
 	static public void writeImage(InputStream is, BufferedImage srcImage, ZipArchiveOutputStream zos, ImageInfo imageInfo,
 			float jpegQuality, LookupOp gammaOp, int maxImagePixels, int maxImageW, int maxImageH, int dispW, int dispH,
 			int autoMarginLimitH, int autoMarginLimitV, int autoMarginWhiteLevel, float autoMarginPadding, int autoMarginNombre, float nombreSize,
-			boolean grayscale, int colorDepth) {
+			boolean grayscale, int colorDepth, boolean dither) {
 		try {
 		String ext = imageInfo.getExt();
 		String outExt = imageInfo.getOutExt();
@@ -260,7 +260,7 @@ public class ImageUtils
 						srcImage = filterdImage;
 					}
 					if (grayscale || colorDepth > 0) srcImage = toGrayscale(srcImage);
-					if (colorDepth > 0) srcImage = reduceGrayscaleLevels(srcImage, colorDepth);
+					if (colorDepth > 0) srcImage = reduceGrayscaleLevels(srcImage, colorDepth, dither);
 					_writeImage(zos, srcImage, outExt, jpegQuality);
 					imageInfo.setOutWidth(srcImage.getWidth());
 					imageInfo.setOutHeight(srcImage.getHeight());
@@ -384,7 +384,7 @@ public class ImageUtils
 				}
 			}
 			if (grayscale || colorDepth > 0) outImage = toGrayscale(outImage);
-			if (colorDepth > 0) outImage = reduceGrayscaleLevels(outImage, colorDepth);
+			if (colorDepth > 0) outImage = reduceGrayscaleLevels(outImage, colorDepth, dither);
 			_writeImage(zos, outImage, outExt, jpegQuality);
 			imageInfo.setOutWidth(outImage.getWidth());
 			imageInfo.setOutHeight(outImage.getHeight());
@@ -416,9 +416,33 @@ public class ImageUtils
 	}
 	static BufferedImage reduceGrayscaleLevels(BufferedImage srcImage, int levels)
 	{
+		return reduceGrayscaleLevels(srcImage, levels, false);
+	}
+
+	static BufferedImage reduceGrayscaleLevels(BufferedImage srcImage, int levels, boolean dither)
+	{
 		if (levels < 2) return srcImage;
 		BufferedImage grayscaleImage = toGrayscale(srcImage);
 		WritableRaster raster = grayscaleImage.getRaster();
+		if (dither) {
+			float[] currentError = new float[grayscaleImage.getWidth() + 2];
+			float[] nextError = new float[grayscaleImage.getWidth() + 2];
+			for (int y = 0; y < grayscaleImage.getHeight(); y++) {
+				for (int x = 0; x < grayscaleImage.getWidth(); x++) {
+					int value = Math.max(0, Math.min(255, Math.round(raster.getSample(x, y, 0) + currentError[x + 1])));
+					int reduced = Math.round(value * (levels - 1) / 255f) * 255 / (levels - 1);
+					raster.setSample(x, y, 0, reduced);
+					float error = value - reduced;
+					currentError[x + 2] += error * 7f / 16f;
+					nextError[x] += error * 3f / 16f;
+					nextError[x + 1] += error * 5f / 16f;
+					nextError[x + 2] += error / 16f;
+				}
+				currentError = nextError;
+				nextError = new float[grayscaleImage.getWidth() + 2];
+			}
+			return grayscaleImage;
+		}
 		for (int y = 0; y < grayscaleImage.getHeight(); y++) {
 			for (int x = 0; x < grayscaleImage.getWidth(); x++) {
 				int value = raster.getSample(x, y, 0);

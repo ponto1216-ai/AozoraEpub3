@@ -37,6 +37,7 @@ public class EpubImageProcessor
 		public boolean grayscale;
 		public boolean png;
 		public int colorDepth;
+		public boolean dither;
 		public int maxWidth;
 		public int maxHeight;
 		public float jpegQuality = 0.8f;
@@ -331,7 +332,7 @@ public class EpubImageProcessor
 		byte[] bytes = readEntry(sourceZip, entry);
 		ImageUtils.writeImage(new ByteArrayInputStream(bytes), null, outputZip, image.imageInfo,
 				options.jpegQuality, null, 0, options.maxWidth, options.maxHeight, 600, 800,
-				0, 0, 0, 0, 0, 0, options.grayscale, options.colorDepth);
+				0, 0, 0, 0, 0, 0, options.grayscale, options.colorDepth, options.dither);
 	}
 
 	private static void writeRewrittenText(ZipFile sourceZip, ZipEntry entry, ZipArchiveOutputStream outputZip, Map<String, String> nameMap, List<ImageEntry> images, Set<String> removedPages, boolean removeImages) throws IOException

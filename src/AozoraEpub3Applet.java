@@ -219,9 +219,11 @@ public class AozoraEpub3Applet extends JFrame
 	JCheckBox jCheckImagePng;
 	JCheckBox jCheckImageColorDepth;
 	JComboBox<String> jComboImageColorDepth;
+	JCheckBox jCheckImageDither;
 	JRadioButton jRadioEpubProcessConvert;
 	JRadioButton jRadioEpubProcessRemove;
 	JComboBox<String> jComboEpubProcessImageMode;
+	JCheckBox jCheckEpubProcessDither;
 	JCheckBox jCheckEpubProcessPng;
 	JCheckBox jCheckEpubProcessResize;
 	JTextField jTextEpubProcessResizeW;
@@ -1131,9 +1133,15 @@ public class AozoraEpub3Applet extends JFrame
 		jComboImageColorDepth.setSelectedIndex(1);
 		jComboImageColorDepth.setEnabled(false);
 		panel.add(jComboImageColorDepth);
+		jCheckImageDither = new JCheckBox("ディザリング");
+		jCheckImageDither.setToolTipText("階調削減時に誤差拡散ディザリングを適用します。写真や濃淡のある挿絵の階調境界を目立ちにくくします");
+		jCheckImageDither.setFocusPainted(false);
+		jCheckImageDither.setEnabled(false);
+		panel.add(jCheckImageDither);
 		jCheckImageColorDepth.addChangeListener(e -> {
 			boolean enabled = jCheckImageColorDepth.isSelected();
 			jComboImageColorDepth.setEnabled(enabled);
+			jCheckImageDither.setEnabled(enabled);
 			if (enabled) {
 				jCheckImageGrayscale.setSelected(true);
 				jCheckImagePng.setSelected(true);
@@ -1570,6 +1578,10 @@ public class AozoraEpub3Applet extends JFrame
 		jComboEpubProcessImageMode.setSelectedIndex(1);
 		jComboEpubProcessImageMode.setToolTipText("既存EPUB内の画像に適用する色と階調を選択します");
 		panel.add(jComboEpubProcessImageMode);
+		jCheckEpubProcessDither = new JCheckBox("ディザリング");
+		jCheckEpubProcessDither.setToolTipText("階調削減時に誤差拡散ディザリングを適用します");
+		jCheckEpubProcessDither.setFocusPainted(false);
+		panel.add(jCheckEpubProcessDither);
 		jCheckEpubProcessPng = new JCheckBox("PNG化");
 		jCheckEpubProcessPng.setToolTipText("画像ファイルをPNGに統一します");
 		jCheckEpubProcessPng.setFocusPainted(false);
@@ -3602,6 +3614,8 @@ public class AozoraEpub3Applet extends JFrame
 		}
 		this.epub3Writer.setImageColorDepth(imageColorDepth);
 		this.epub3ImageWriter.setImageColorDepth(imageColorDepth);
+		this.epub3Writer.setImageDither(jCheckImageDither.isSelected());
+		this.epub3ImageWriter.setImageDither(jCheckImageDither.isSelected());
 		//目次階層化設定
 		this.epub3Writer.setTocParam(jCheckNavNest.isSelected(), jCheckNcxNest.isSelected());
 
@@ -3726,6 +3740,7 @@ public class AozoraEpub3Applet extends JFrame
 		boolean convert = jRadioEpubProcessConvert.isSelected();
 		boolean reducedLevels = convert && jComboEpubProcessImageMode.getSelectedIndex() >= 2;
 		jComboEpubProcessImageMode.setEnabled(convert);
+		jCheckEpubProcessDither.setEnabled(reducedLevels);
 		if (reducedLevels) jCheckEpubProcessPng.setSelected(true);
 		jCheckEpubProcessPng.setEnabled(convert && !reducedLevels);
 		jCheckEpubProcessResize.setEnabled(convert);
@@ -3774,6 +3789,7 @@ public class AozoraEpub3Applet extends JFrame
 			options.grayscale = imageMode > 0;
 			options.png = jCheckEpubProcessPng.isSelected();
 			if (imageMode >= 2) options.colorDepth = new int[] {2, 4, 16}[imageMode - 2];
+			options.dither = jCheckEpubProcessDither.isSelected();
 		}
 		if (jRadioEpubProcessConvert.isSelected() && jCheckEpubProcessResize.isSelected()) {
 			options.maxWidth = Integer.parseInt(jTextEpubProcessResizeW.getText());
@@ -4949,6 +4965,8 @@ public class AozoraEpub3Applet extends JFrame
 		else if (imageColorDepth == 16) jComboImageColorDepth.setSelectedIndex(2);
 		else jComboImageColorDepth.setSelectedIndex(1);
 		jComboImageColorDepth.setEnabled(jCheckImageColorDepth.isSelected());
+		setPropsSelected(jCheckImageDither, props, "ImageDither");
+		jCheckImageDither.setEnabled(jCheckImageColorDepth.isSelected());
 		String epubProcessMode = props.getProperty("EpubProcessMode");
 		if (epubProcessMode == null) epubProcessMode = "1".equals(props.getProperty("EpubRemoveImages")) ? "remove" : "convert";
 		jRadioEpubProcessRemove.setSelected("remove".equals(epubProcessMode));
@@ -4961,6 +4979,7 @@ public class AozoraEpub3Applet extends JFrame
 			else epubImageMode = "1".equals(props.getProperty("ImageGrayscale")) ? 1 : 0;
 		}
 		jComboEpubProcessImageMode.setSelectedIndex(epubImageMode);
+		setPropsSelected(jCheckEpubProcessDither, props, "EpubProcessDither");
 		if (props.getProperty("EpubProcessPng") != null) setPropsSelected(jCheckEpubProcessPng, props, "EpubProcessPng");
 		else setPropsSelected(jCheckEpubProcessPng, props, "ImagePng");
 		if (props.getProperty("EpubProcessResize") != null) setPropsSelected(jCheckEpubProcessResize, props, "EpubProcessResize");
@@ -5188,8 +5207,10 @@ public class AozoraEpub3Applet extends JFrame
 		props.setProperty("ImageGrayscale", this.jCheckImageGrayscale.isSelected()?"1":"");
 		props.setProperty("ImagePng", this.jCheckImagePng.isSelected()?"1":"");
 		props.setProperty("ImageColorDepth", this.jCheckImageColorDepth.isSelected() ? new String[] {"2", "4", "16"}[this.jComboImageColorDepth.getSelectedIndex()] : "0");
+		props.setProperty("ImageDither", this.jCheckImageDither.isSelected()?"1":"");
 		props.setProperty("EpubProcessMode", this.jRadioEpubProcessRemove.isSelected()?"remove":"convert");
 		props.setProperty("EpubProcessImageMode", ""+this.jComboEpubProcessImageMode.getSelectedIndex());
+		props.setProperty("EpubProcessDither", this.jCheckEpubProcessDither.isSelected()?"1":"");
 		props.setProperty("EpubProcessPng", this.jCheckEpubProcessPng.isSelected()?"1":"");
 		props.setProperty("EpubProcessResize", this.jCheckEpubProcessResize.isSelected()?"1":"");
 		props.setProperty("EpubProcessResizeW", this.jTextEpubProcessResizeW.getText());

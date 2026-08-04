@@ -45,7 +45,7 @@ public class ImageUtilsTest
 		try (ZipArchiveOutputStream archive = new ZipArchiveOutputStream(archiveBytes)) {
 			archive.putArchiveEntry(new ZipArchiveEntry("image.png"));
 			ImageUtils.writeImage(new ByteArrayInputStream(jpegBytes.toByteArray()), null, archive, imageInfo,
-					0.8f, null, 0, 0, 0, 600, 800, 0, 0, 0, 0, 0, 0, false, 0);
+					0.8f, null, 0, 0, 0, 600, 800, 0, 0, 0, 0, 0, 0, false, 0, false);
 			archive.closeArchiveEntry();
 		}
 
@@ -70,5 +70,18 @@ public class ImageUtilsTest
 		Assert.assertArrayEquals(new int[] {0, 0, 255, 255}, new int[] {
 				reduced.getRaster().getSample(0, 0, 0), reduced.getRaster().getSample(1, 0, 0),
 				reduced.getRaster().getSample(2, 0, 0), reduced.getRaster().getSample(3, 0, 0)});
+	}
+
+	@Test
+	public void ditheringDistributesQuantizationError()
+	{
+		BufferedImage source = new BufferedImage(2, 1, BufferedImage.TYPE_BYTE_GRAY);
+		source.getRaster().setSample(0, 0, 0, 127);
+		source.getRaster().setSample(1, 0, 0, 127);
+
+		BufferedImage reduced = ImageUtils.reduceGrayscaleLevels(source, 2, true);
+
+		Assert.assertArrayEquals(new int[] {0, 255}, new int[] {
+				reduced.getRaster().getSample(0, 0, 0), reduced.getRaster().getSample(1, 0, 0)});
 	}
 }

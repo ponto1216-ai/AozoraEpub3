@@ -196,6 +196,9 @@ public class AozoraEpub3
 			epub3ImageWriter.setImagePng(imagePng);
 			epub3Writer.setImageColorDepth(imageColorDepth);
 			epub3ImageWriter.setImageColorDepth(imageColorDepth);
+			boolean imageDither = "1".equals(props.getProperty("ImageDither"));
+			epub3Writer.setImageDither(imageDither);
+			epub3ImageWriter.setImageDither(imageDither);
 			//目次階層化設定
 			epub3Writer.setTocParam("1".equals(props.getProperty("NavNest")), "1".equals(props.getProperty("NcxNest")));
 
