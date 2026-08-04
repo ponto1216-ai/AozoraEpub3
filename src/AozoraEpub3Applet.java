@@ -219,7 +219,13 @@ public class AozoraEpub3Applet extends JFrame
 	JCheckBox jCheckImagePng;
 	JCheckBox jCheckImageColorDepth;
 	JComboBox<String> jComboImageColorDepth;
-	JCheckBox jCheckEpubRemoveImages;
+	JRadioButton jRadioEpubProcessConvert;
+	JRadioButton jRadioEpubProcessRemove;
+	JComboBox<String> jComboEpubProcessImageMode;
+	JCheckBox jCheckEpubProcessPng;
+	JCheckBox jCheckEpubProcessResize;
+	JTextField jTextEpubProcessResizeW;
+	JTextField jTextEpubProcessResizeH;
 	JCheckBox jCheckEpubRemoveImageOnlyPages;
 
 	//画像縮小
@@ -670,7 +676,7 @@ public class AozoraEpub3Applet extends JFrame
 		tabPanel = new JPanel();
 		tabPanel.setLayout(new BoxLayout(tabPanel, BoxLayout.Y_AXIS));
 		jTabbedPane.setPreferredSize(new Dimension(1920, 220));
-		jTabbedPane.addTab("変換 ", epubIcon, tabPanel);
+		jTabbedPane.addTab("基本変換", epubIcon, tabPanel);
 
 		////////////////////////////////
 		//表題
@@ -991,12 +997,6 @@ public class AozoraEpub3Applet extends JFrame
 		jButtonFile.setFocusPainted(false);
 		jButtonFile.addActionListener(new FileChooserListener(this));
 		panel2.add(jButtonFile);
-		JButton jButtonEpubImage = new JButton("EPUB画像処理");
-		jButtonEpubImage.setToolTipText("既存EPUBの画像を、現在の画像変換設定で再処理します");
-		jButtonEpubImage.setBorder(padding5H3V);
-		jButtonEpubImage.setFocusPainted(false);
-		jButtonEpubImage.addActionListener(e -> processExistingEpub());
-		panel2.add(jButtonEpubImage);
 		panel.add(panel2);
 
 		////////////////////////////////////////////////////////////////
@@ -1005,7 +1005,7 @@ public class AozoraEpub3Applet extends JFrame
 		tabPanel = new JPanel();
 		//tabPanel.setLayout(new BoxLayout(tabPanel, BoxLayout.Y_AXIS));
 		tabPanel.setLayout(new FlowLayout(FlowLayout.LEFT, 1, 0));
-		jTabbedPane.addTab("画像1", imageIcon, tabPanel);
+		jTabbedPane.addTab("画像・基本", imageIcon, tabPanel);
 
 		////////////////////////////////
 		//挿絵なし
@@ -1142,27 +1142,6 @@ public class AozoraEpub3Applet extends JFrame
 		});
 		jCheckImagePng.addChangeListener(e -> {
 			if (jCheckImageColorDepth.isSelected() && !jCheckImagePng.isSelected()) jCheckImagePng.setSelected(true);
-		});
-
-		panel = new JPanel();
-		panel.setLayout(new BoxLayout(panel, BoxLayout.X_AXIS));
-		panel.setBorder(new NarrowTitledBorder("既存EPUB画像処理"));
-		tabPanel.add(panel);
-		jCheckEpubRemoveImages = new JCheckBox("画像を除去する");
-		jCheckEpubRemoveImages.setToolTipText("既存EPUBの画像ファイルと本文内の画像タグを削除します。通常の変換には影響しません");
-		jCheckEpubRemoveImages.setFocusPainted(false);
-		jCheckEpubRemoveImages.setBorder(padding2);
-		panel.add(jCheckEpubRemoveImages);
-		jCheckEpubRemoveImageOnlyPages = new JCheckBox("画像だけのページも削除する");
-		jCheckEpubRemoveImageOnlyPages.setToolTipText("画像を除去した後に本文が残らないXHTMLページを、EPUBから除外します");
-		jCheckEpubRemoveImageOnlyPages.setFocusPainted(false);
-		jCheckEpubRemoveImageOnlyPages.setBorder(padding2);
-		jCheckEpubRemoveImageOnlyPages.setEnabled(false);
-		panel.add(jCheckEpubRemoveImageOnlyPages);
-		jCheckEpubRemoveImages.addChangeListener(e -> {
-			boolean enabled = jCheckEpubRemoveImages.isSelected();
-			jCheckEpubRemoveImageOnlyPages.setEnabled(enabled);
-			if (!enabled) jCheckEpubRemoveImageOnlyPages.setSelected(false);
 		});
 
 		////////////////////////////////
@@ -1335,7 +1314,7 @@ public class AozoraEpub3Applet extends JFrame
 		tabPanel = new JPanel();
 		//tabPanel.setLayout(new BoxLayout(tabPanel, BoxLayout.Y_AXIS));
 		tabPanel.setLayout(new FlowLayout(FlowLayout.LEFT, 1, 0));
-		jTabbedPane.addTab("画像2", imageIcon, tabPanel);
+		jTabbedPane.addTab("画像・詳細", imageIcon, tabPanel);
 
 		////////////////////////////////
 		//全画面＋SVG
@@ -1559,6 +1538,82 @@ public class AozoraEpub3Applet extends JFrame
 		label = new JLabel("% )");
 		label.setBorder(padding2H);
 		panel.add(label);
+
+		////////////////////////////////////////////////////////////////
+		//Tab 既存EPUB加工
+		////////////////////////////////////////////////////////////////
+		tabPanel = new JPanel();
+		tabPanel.setLayout(new BoxLayout(tabPanel, BoxLayout.Y_AXIS));
+		jTabbedPane.addTab("既存EPUB加工", epubIcon, tabPanel);
+
+		panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
+		panel.setBorder(new NarrowTitledBorder("処理内容"));
+		tabPanel.add(panel);
+		buttonGroup = new ButtonGroup();
+		jRadioEpubProcessConvert = new JRadioButton("画像を変換する", true);
+		jRadioEpubProcessConvert.setFocusPainted(false);
+		jRadioEpubProcessRemove = new JRadioButton("画像を削除する");
+		jRadioEpubProcessRemove.setFocusPainted(false);
+		buttonGroup.add(jRadioEpubProcessConvert);
+		buttonGroup.add(jRadioEpubProcessRemove);
+		panel.add(jRadioEpubProcessConvert);
+		panel.add(jRadioEpubProcessRemove);
+
+		panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
+		panel.setBorder(new NarrowTitledBorder("画像変換"));
+		tabPanel.add(panel);
+		label = new JLabel("画像モード:");
+		panel.add(label);
+		jComboEpubProcessImageMode = new JComboBox<String>(new String[] {"カラーのまま", "グレースケール", "白黒 (2階調)", "4階調グレー", "16階調グレー"});
+		jComboEpubProcessImageMode.setSelectedIndex(1);
+		jComboEpubProcessImageMode.setToolTipText("既存EPUB内の画像に適用する色と階調を選択します");
+		panel.add(jComboEpubProcessImageMode);
+		jCheckEpubProcessPng = new JCheckBox("PNG化");
+		jCheckEpubProcessPng.setToolTipText("画像ファイルをPNGに統一します");
+		jCheckEpubProcessPng.setFocusPainted(false);
+		panel.add(jCheckEpubProcessPng);
+		jCheckEpubProcessResize = new JCheckBox("サイズを縮小");
+		jCheckEpubProcessResize.setFocusPainted(false);
+		panel.add(jCheckEpubProcessResize);
+		label = new JLabel("最大幅");
+		panel.add(label);
+		jTextEpubProcessResizeW = new JTextField("1600");
+		jTextEpubProcessResizeW.setHorizontalAlignment(JTextField.RIGHT);
+		jTextEpubProcessResizeW.setInputVerifier(new IntegerInputVerifier(1600, 1, 9999));
+		jTextEpubProcessResizeW.setPreferredSize(text5);
+		panel.add(jTextEpubProcessResizeW);
+		label = new JLabel("px  最大高さ");
+		panel.add(label);
+		jTextEpubProcessResizeH = new JTextField("2560");
+		jTextEpubProcessResizeH.setHorizontalAlignment(JTextField.RIGHT);
+		jTextEpubProcessResizeH.setInputVerifier(new IntegerInputVerifier(2560, 1, 9999));
+		jTextEpubProcessResizeH.setPreferredSize(text5);
+		panel.add(jTextEpubProcessResizeH);
+		label = new JLabel("px");
+		panel.add(label);
+
+		panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
+		panel.setBorder(new NarrowTitledBorder("画像削除"));
+		tabPanel.add(panel);
+		jCheckEpubRemoveImageOnlyPages = new JCheckBox("画像だけのページも削除する");
+		jCheckEpubRemoveImageOnlyPages.setToolTipText("画像を除去した後に本文が残らないXHTMLページをEPUBから除外します");
+		jCheckEpubRemoveImageOnlyPages.setFocusPainted(false);
+		panel.add(jCheckEpubRemoveImageOnlyPages);
+
+		panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 2));
+		tabPanel.add(panel);
+		JButton jButtonEpubImage = new JButton("EPUBを選択して加工開始");
+		jButtonEpubImage.setToolTipText("入力EPUBと保存先を選択して処理を開始します");
+		jButtonEpubImage.setBorder(padding5H3V);
+		jButtonEpubImage.setFocusPainted(false);
+		jButtonEpubImage.addActionListener(e -> processExistingEpub());
+		panel.add(jButtonEpubImage);
+
+		jRadioEpubProcessConvert.addChangeListener(e -> updateEpubProcessControls());
+		jRadioEpubProcessRemove.addChangeListener(e -> updateEpubProcessControls());
+		jComboEpubProcessImageMode.addActionListener(e -> updateEpubProcessControls());
+		jCheckEpubProcessResize.addChangeListener(e -> updateEpubProcessControls());
+		updateEpubProcessControls();
 
 		////////////////////////////////////////////////////////////////
 		//Tab 詳細設定
@@ -3653,6 +3708,21 @@ public class AozoraEpub3Applet extends JFrame
 
 	}
 
+	private void updateEpubProcessControls()
+	{
+		if (jRadioEpubProcessConvert == null) return;
+		boolean convert = jRadioEpubProcessConvert.isSelected();
+		boolean reducedLevels = convert && jComboEpubProcessImageMode.getSelectedIndex() >= 2;
+		jComboEpubProcessImageMode.setEnabled(convert);
+		if (reducedLevels) jCheckEpubProcessPng.setSelected(true);
+		jCheckEpubProcessPng.setEnabled(convert && !reducedLevels);
+		jCheckEpubProcessResize.setEnabled(convert);
+		boolean resize = convert && jCheckEpubProcessResize.isSelected();
+		jTextEpubProcessResizeW.setEnabled(resize);
+		jTextEpubProcessResizeH.setEnabled(resize);
+		jCheckEpubRemoveImageOnlyPages.setEnabled(!convert);
+	}
+
 	private void processExistingEpub()
 	{
 		if (isRunning()) return;
@@ -3665,7 +3735,8 @@ public class AozoraEpub3Applet extends JFrame
 		JFileChooser outputChooser = new JFileChooser(inputFile.getParentFile());
 		outputChooser.setDialogTitle("処理後のEPUBの保存先を選択");
 		outputChooser.setFileFilter(new FileNameExtensionFilter("EPUBファイル(epub)", "epub"));
-		outputChooser.setSelectedFile(new File(inputFile.getName().replaceFirst("(?i)\\.epub$", "") + "_画像最適化.epub"));
+		String outputSuffix = jRadioEpubProcessRemove.isSelected() ? "_画像なし.epub" : "_画像最適化.epub";
+		outputChooser.setSelectedFile(new File(inputFile.getName().replaceFirst("(?i)\\.epub$", "") + outputSuffix));
 		if (outputChooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
 		File outputFile = outputChooser.getSelectedFile();
 		if (!outputFile.getName().toLowerCase().endsWith(".epub")) outputFile = new File(outputFile.getPath() + ".epub");
@@ -3676,16 +3747,18 @@ public class AozoraEpub3Applet extends JFrame
 		if (outputFile.exists() && JOptionPane.showConfirmDialog(this, "同名のファイルがあります。上書きしますか？", "EPUB画像処理", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return;
 
 		EpubImageProcessor.Options options = new EpubImageProcessor.Options();
-		options.grayscale = jCheckImageGrayscale.isSelected();
-		options.png = jCheckImagePng.isSelected();
-		options.colorDepth = jCheckImageColorDepth.isSelected() ? new int[] {2, 4, 16}[jComboImageColorDepth.getSelectedIndex()] : 0;
-		options.removeImages = jCheckEpubRemoveImages.isSelected();
+		int imageMode = jComboEpubProcessImageMode.getSelectedIndex();
+		options.grayscale = imageMode > 0;
+		options.png = jCheckEpubProcessPng.isSelected();
+		if (imageMode >= 2) options.colorDepth = new int[] {2, 4, 16}[imageMode - 2];
+		options.removeImages = jRadioEpubProcessRemove.isSelected();
 		options.removeImageOnlyPages = jCheckEpubRemoveImageOnlyPages.isSelected();
-		if (jCheckResizeW.isSelected()) options.maxWidth = Integer.parseInt(jTextResizeNumW.getText());
-		if (jCheckResizeH.isSelected()) options.maxHeight = Integer.parseInt(jTextResizeNumH.getText());
-		options.jpegQuality = Integer.parseInt(jTextJpegQuality.getText()) / 100f;
+		if (jRadioEpubProcessConvert.isSelected() && jCheckEpubProcessResize.isSelected()) {
+			options.maxWidth = Integer.parseInt(jTextEpubProcessResizeW.getText());
+			options.maxHeight = Integer.parseInt(jTextEpubProcessResizeH.getText());
+		}
 		if (!options.needsProcessing()) {
-			JOptionPane.showMessageDialog(this, "グレースケール化・PNG化・階調削減・画像縮小のいずれかを有効にしてください", "EPUB画像処理", JOptionPane.INFORMATION_MESSAGE);
+			JOptionPane.showMessageDialog(this, "画像モード・PNG化・サイズ縮小のいずれかを指定してください", "既存EPUB加工", JOptionPane.INFORMATION_MESSAGE);
 			return;
 		}
 
@@ -4592,6 +4665,7 @@ public class AozoraEpub3Applet extends JFrame
 		//disabledになっているものは再チェック
 		if (enabled) {
 			this.setProfileMoveEnable();
+			this.updateEpubProcessControls();
 		}
 
 	}
@@ -4850,9 +4924,28 @@ public class AozoraEpub3Applet extends JFrame
 		else if (imageColorDepth == 16) jComboImageColorDepth.setSelectedIndex(2);
 		else jComboImageColorDepth.setSelectedIndex(1);
 		jComboImageColorDepth.setEnabled(jCheckImageColorDepth.isSelected());
-		setPropsSelected(jCheckEpubRemoveImages, props, "EpubRemoveImages");
+		String epubProcessMode = props.getProperty("EpubProcessMode");
+		if (epubProcessMode == null) epubProcessMode = "1".equals(props.getProperty("EpubRemoveImages")) ? "remove" : "convert";
+		jRadioEpubProcessRemove.setSelected("remove".equals(epubProcessMode));
+		jRadioEpubProcessConvert.setSelected(!jRadioEpubProcessRemove.isSelected());
+		int epubImageMode = -1; try { epubImageMode = Integer.parseInt(props.getProperty("EpubProcessImageMode")); } catch (Exception e) {}
+		if (epubImageMode < 0 || epubImageMode > 4) {
+			if (imageColorDepth == 2) epubImageMode = 2;
+			else if (imageColorDepth == 4) epubImageMode = 3;
+			else if (imageColorDepth == 16) epubImageMode = 4;
+			else epubImageMode = "1".equals(props.getProperty("ImageGrayscale")) ? 1 : 0;
+		}
+		jComboEpubProcessImageMode.setSelectedIndex(epubImageMode);
+		if (props.getProperty("EpubProcessPng") != null) setPropsSelected(jCheckEpubProcessPng, props, "EpubProcessPng");
+		else setPropsSelected(jCheckEpubProcessPng, props, "ImagePng");
+		if (props.getProperty("EpubProcessResize") != null) setPropsSelected(jCheckEpubProcessResize, props, "EpubProcessResize");
+		else jCheckEpubProcessResize.setSelected("1".equals(props.getProperty("ResizeW")) || "1".equals(props.getProperty("ResizeH")));
+		if (props.getProperty("EpubProcessResizeW") != null) setPropsIntText(jTextEpubProcessResizeW, props, "EpubProcessResizeW");
+		else setPropsIntText(jTextEpubProcessResizeW, props, "ResizeNumW");
+		if (props.getProperty("EpubProcessResizeH") != null) setPropsIntText(jTextEpubProcessResizeH, props, "EpubProcessResizeH");
+		else setPropsIntText(jTextEpubProcessResizeH, props, "ResizeNumH");
 		setPropsSelected(jCheckEpubRemoveImageOnlyPages, props, "EpubRemoveImageOnlyPages");
-		jCheckEpubRemoveImageOnlyPages.setEnabled(jCheckEpubRemoveImages.isSelected());
+		updateEpubProcessControls();
 		//画像回り込み
 		setPropsSelected(jCheckImageFloat, props, "ImageFloat");
 		setPropsIntText(jTextImageFloatW, props, "ImageFloatW");
@@ -5066,7 +5159,13 @@ public class AozoraEpub3Applet extends JFrame
 		props.setProperty("ImageGrayscale", this.jCheckImageGrayscale.isSelected()?"1":"");
 		props.setProperty("ImagePng", this.jCheckImagePng.isSelected()?"1":"");
 		props.setProperty("ImageColorDepth", this.jCheckImageColorDepth.isSelected() ? new String[] {"2", "4", "16"}[this.jComboImageColorDepth.getSelectedIndex()] : "0");
-		props.setProperty("EpubRemoveImages", this.jCheckEpubRemoveImages.isSelected()?"1":"");
+		props.setProperty("EpubProcessMode", this.jRadioEpubProcessRemove.isSelected()?"remove":"convert");
+		props.setProperty("EpubProcessImageMode", ""+this.jComboEpubProcessImageMode.getSelectedIndex());
+		props.setProperty("EpubProcessPng", this.jCheckEpubProcessPng.isSelected()?"1":"");
+		props.setProperty("EpubProcessResize", this.jCheckEpubProcessResize.isSelected()?"1":"");
+		props.setProperty("EpubProcessResizeW", this.jTextEpubProcessResizeW.getText());
+		props.setProperty("EpubProcessResizeH", this.jTextEpubProcessResizeH.getText());
+		props.setProperty("EpubRemoveImages", this.jRadioEpubProcessRemove.isSelected()?"1":"");
 		props.setProperty("EpubRemoveImageOnlyPages", this.jCheckEpubRemoveImageOnlyPages.isSelected()?"1":"");
 		//画像回り込み
 		props.setProperty("ImageFloat", this.jCheckImageFloat.isSelected()?"1":"");
