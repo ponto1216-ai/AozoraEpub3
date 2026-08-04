@@ -216,6 +216,8 @@ public class AozoraEpub3Applet extends JFrame
 	JTextField jTextImageScale;
 	JCheckBox jCheckImageGrayscale;
 	JCheckBox jCheckImagePng;
+	JCheckBox jCheckImageColorDepth;
+	JComboBox<String> jComboImageColorDepth;
 
 	//画像縮小
 	JCheckBox jCheckResizeW;
@@ -1108,6 +1110,30 @@ public class AozoraEpub3Applet extends JFrame
 		jCheckImagePng.setFocusPainted(false);
 		jCheckImagePng.setBorder(padding2);
 		panel.add(jCheckImagePng);
+		jCheckImageColorDepth = new JCheckBox("階調数を減らす");
+		jCheckImageColorDepth.setToolTipText("グレースケール化とPNG化を自動適用し、画像の階調数を減らします");
+		jCheckImageColorDepth.setFocusPainted(false);
+		jCheckImageColorDepth.setBorder(padding2);
+		panel.add(jCheckImageColorDepth);
+		jComboImageColorDepth = new JComboBox<String>(new String[] {"白黒 (2階調)", "4階調グレー", "16階調グレー"});
+		jComboImageColorDepth.setToolTipText("文字・線画は2階調、写真や濃淡のある挿絵は4階調または16階調を選択します");
+		jComboImageColorDepth.setSelectedIndex(1);
+		jComboImageColorDepth.setEnabled(false);
+		panel.add(jComboImageColorDepth);
+		jCheckImageColorDepth.addChangeListener(e -> {
+			boolean enabled = jCheckImageColorDepth.isSelected();
+			jComboImageColorDepth.setEnabled(enabled);
+			if (enabled) {
+				jCheckImageGrayscale.setSelected(true);
+				jCheckImagePng.setSelected(true);
+			}
+		});
+		jCheckImageGrayscale.addChangeListener(e -> {
+			if (jCheckImageColorDepth.isSelected() && !jCheckImageGrayscale.isSelected()) jCheckImageGrayscale.setSelected(true);
+		});
+		jCheckImagePng.addChangeListener(e -> {
+			if (jCheckImageColorDepth.isSelected() && !jCheckImagePng.isSelected()) jCheckImagePng.setSelected(true);
+		});
 
 		////////////////////////////////
 		//画像回り込み
@@ -3473,6 +3499,12 @@ public class AozoraEpub3Applet extends JFrame
 		this.epub3ImageWriter.setImageGrayscale(jCheckImageGrayscale.isSelected());
 		this.epub3Writer.setImagePng(jCheckImagePng.isSelected());
 		this.epub3ImageWriter.setImagePng(jCheckImagePng.isSelected());
+		int imageColorDepth = 0;
+		if (jCheckImageColorDepth.isSelected()) {
+			imageColorDepth = new int[] {2, 4, 16}[jComboImageColorDepth.getSelectedIndex()];
+		}
+		this.epub3Writer.setImageColorDepth(imageColorDepth);
+		this.epub3ImageWriter.setImageColorDepth(imageColorDepth);
 		//目次階層化設定
 		this.epub3Writer.setTocParam(jCheckNavNest.isSelected(), jCheckNcxNest.isSelected());
 
@@ -4722,6 +4754,12 @@ public class AozoraEpub3Applet extends JFrame
 		setPropsFloatText(jTextImageScale, props, "ImageScale");
 		setPropsSelected(jCheckImageGrayscale, props, "ImageGrayscale");
 		setPropsSelected(jCheckImagePng, props, "ImagePng");
+		int imageColorDepth = 0; try { imageColorDepth = Integer.parseInt(props.getProperty("ImageColorDepth")); } catch (Exception e) {}
+		jCheckImageColorDepth.setSelected(imageColorDepth > 0);
+		if (imageColorDepth == 2) jComboImageColorDepth.setSelectedIndex(0);
+		else if (imageColorDepth == 16) jComboImageColorDepth.setSelectedIndex(2);
+		else jComboImageColorDepth.setSelectedIndex(1);
+		jComboImageColorDepth.setEnabled(jCheckImageColorDepth.isSelected());
 		//画像回り込み
 		setPropsSelected(jCheckImageFloat, props, "ImageFloat");
 		setPropsIntText(jTextImageFloatW, props, "ImageFloatW");
@@ -4934,6 +4972,7 @@ public class AozoraEpub3Applet extends JFrame
 		props.setProperty("ImageScale", this.jTextImageScale.getText());
 		props.setProperty("ImageGrayscale", this.jCheckImageGrayscale.isSelected()?"1":"");
 		props.setProperty("ImagePng", this.jCheckImagePng.isSelected()?"1":"");
+		props.setProperty("ImageColorDepth", this.jCheckImageColorDepth.isSelected() ? new String[] {"2", "4", "16"}[this.jComboImageColorDepth.getSelectedIndex()] : "0");
 		//画像回り込み
 		props.setProperty("ImageFloat", this.jCheckImageFloat.isSelected()?"1":"");
 		props.setProperty("ImageFloatType", ""+this.jComboImageFloatType.getSelectedIndex());

@@ -45,7 +45,7 @@ public class ImageUtilsTest
 		try (ZipArchiveOutputStream archive = new ZipArchiveOutputStream(archiveBytes)) {
 			archive.putArchiveEntry(new ZipArchiveEntry("image.png"));
 			ImageUtils.writeImage(new ByteArrayInputStream(jpegBytes.toByteArray()), null, archive, imageInfo,
-					0.8f, null, 0, 0, 0, 600, 800, 0, 0, 0, 0, 0, 0, false);
+					0.8f, null, 0, 0, 0, 600, 800, 0, 0, 0, 0, 0, 0, false, 0);
 			archive.closeArchiveEntry();
 		}
 
@@ -54,5 +54,21 @@ public class ImageUtilsTest
 		byte[] signature = archive.readNBytes(8);
 		archive.close();
 		Assert.assertArrayEquals(new byte[] {(byte)0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}, signature);
+	}
+
+	@Test
+	public void reducesGrayscaleToRequestedNumberOfLevels()
+	{
+		BufferedImage source = new BufferedImage(4, 1, BufferedImage.TYPE_BYTE_GRAY);
+		source.getRaster().setSample(0, 0, 0, 0);
+		source.getRaster().setSample(1, 0, 0, 85);
+		source.getRaster().setSample(2, 0, 0, 170);
+		source.getRaster().setSample(3, 0, 0, 255);
+
+		BufferedImage reduced = ImageUtils.reduceGrayscaleLevels(source, 2);
+
+		Assert.assertArrayEquals(new int[] {0, 0, 255, 255}, new int[] {
+				reduced.getRaster().getSample(0, 0, 0), reduced.getRaster().getSample(1, 0, 0),
+				reduced.getRaster().getSample(2, 0, 0), reduced.getRaster().getSample(3, 0, 0)});
 	}
 }

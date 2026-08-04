@@ -199,6 +199,7 @@ public class Epub3Writer
 	float jpegQuality = 0.8f;
 	boolean imageGrayscale = false;
 	boolean imagePng = false;
+	int imageColorDepth = 0;
 
 	/** ガンマフィルタ */
 	LookupOp gammaOp;
@@ -358,9 +359,14 @@ public class Epub3Writer
 		this.imagePng = imagePng;
 	}
 
+	public void setImageColorDepth(int imageColorDepth)
+	{
+		this.imageColorDepth = imageColorDepth == 2 || imageColorDepth == 4 || imageColorDepth == 16 ? imageColorDepth : 0;
+	}
+
 	String getOutputImageExt(ImageInfo imageInfo)
 	{
-		if (this.imagePng && !this.isKindle) return "png";
+		if ((this.imagePng || this.imageColorDepth > 0) && !this.isKindle) return "png";
 		return imageInfo.getExt().replaceFirst("jpeg", "jpg");
 	}
 
@@ -964,26 +970,26 @@ public class Epub3Writer
 		imageInfo.rotateAngle = 0; //回転させない
 		ImageUtils.writeImage(null, srcImage, zos,imageInfo, this.jpegQuality, this.gammaOp,
 				0, 0, 0, this.dispW, this.dispH,
-				0, 0, 0, 0, 0, 0, this.imageGrayscale);
+				0, 0, 0, 0, 0, 0, this.imageGrayscale, this.imageColorDepth);
 	}
 	/** 表紙画像を出力 */
 	void writeCoverImage(InputStream is, ZipArchiveOutputStream zos, ImageInfo imageInfo) {
 		imageInfo.rotateAngle = 0; //回転させない
 		ImageUtils.writeImage(is, null, zos,imageInfo, this.jpegQuality, this.gammaOp,
 				0, this.coverW, this.coverH, this.dispW, this.dispH,
-				0, 0, 0, 0, 0, 0, this.imageGrayscale);
+				0, 0, 0, 0, 0, 0, this.imageGrayscale, this.imageColorDepth);
 	}
 	/** 画像を出力 */
 	void writeImage(InputStream is,ZipArchiveOutputStream zos, ImageInfo imageInfo) {
 		ImageUtils.writeImage(is, null, zos, imageInfo, this.jpegQuality, this.gammaOp,
 				this.maxImagePixels, this.maxImageW, this.maxImageH, this.dispW, this.dispH,
-				this.autoMarginLimitH, this.autoMarginLimitV, this.autoMarginWhiteLevel, this.autoMarginPadding, this.autoMarginNombre, this.autoMarginNombreSize, this.imageGrayscale);
+				this.autoMarginLimitH, this.autoMarginLimitV, this.autoMarginWhiteLevel, this.autoMarginPadding, this.autoMarginNombre, this.autoMarginNombreSize, this.imageGrayscale, this.imageColorDepth);
 	}
 	/** 画像を出力 */
 	void writeImage(BufferedImage srcImage, ZipArchiveOutputStream zos, ImageInfo imageInfo) {
 		ImageUtils.writeImage(null, srcImage, zos, imageInfo, this.jpegQuality, this.gammaOp,
 				this.maxImagePixels, this.maxImageW, this.maxImageH, this.dispW, this.dispH,
-				this.autoMarginLimitH,  this.autoMarginLimitV, this.autoMarginWhiteLevel, this.autoMarginPadding, this.autoMarginNombre, this.autoMarginNombreSize, this.imageGrayscale);
+				this.autoMarginLimitH,  this.autoMarginLimitV, this.autoMarginWhiteLevel, this.autoMarginPadding, this.autoMarginNombre, this.autoMarginNombreSize, this.imageGrayscale, this.imageColorDepth);
 	}
 
 	/** 本文を出力する */

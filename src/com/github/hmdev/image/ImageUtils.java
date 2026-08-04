@@ -142,11 +142,11 @@ public class ImageUtils
 	static public void writeImage(InputStream is, BufferedImage srcImage, ZipArchiveOutputStream zos, ImageInfo imageInfo,
 			float jpegQuality, LookupOp gammaOp, int maxImagePixels, int maxImageW, int maxImageH, int dispW, int dispH,
 			int autoMarginLimitH, int autoMarginLimitV, int autoMarginWhiteLevel, float autoMarginPadding, int autoMarginNombre, float nombreSize,
-			boolean grayscale) {
+			boolean grayscale, int colorDepth) {
 		try {
 		String ext = imageInfo.getExt();
 		String outExt = imageInfo.getOutExt();
-		boolean forceReencode = grayscale || !ext.equals(outExt);
+		boolean forceReencode = grayscale || colorDepth > 0 || !ext.equals(outExt);
 
 		int imgW = imageInfo.getWidth();
 		int imgH = imageInfo.getHeight();
@@ -259,7 +259,8 @@ public class ImageUtils
 						srcImage = gammaOp.filter(srcImage, filterdImage);
 						srcImage = filterdImage;
 					}
-					if (grayscale) srcImage = toGrayscale(srcImage);
+					if (grayscale || colorDepth > 0) srcImage = toGrayscale(srcImage);
+					if (colorDepth > 0) srcImage = reduceGrayscaleLevels(srcImage, colorDepth);
 					_writeImage(zos, srcImage, outExt, jpegQuality);
 					imageInfo.setOutWidth(srcImage.getWidth());
 					imageInfo.setOutHeight(srcImage.getHeight());
@@ -382,7 +383,8 @@ public class ImageUtils
 					outImage = filterdImage;
 				}
 			}
-			if (grayscale) outImage = toGrayscale(outImage);
+			if (grayscale || colorDepth > 0) outImage = toGrayscale(outImage);
+			if (colorDepth > 0) outImage = reduceGrayscaleLevels(outImage, colorDepth);
 			_writeImage(zos, outImage, outExt, jpegQuality);
 			imageInfo.setOutWidth(outImage.getWidth());
 			imageInfo.setOutHeight(outImage.getHeight());
@@ -409,6 +411,20 @@ public class ImageUtils
 			g.drawImage(srcImage, 0, 0, null);
 		} finally {
 			g.dispose();
+		}
+		return grayscaleImage;
+	}
+	static BufferedImage reduceGrayscaleLevels(BufferedImage srcImage, int levels)
+	{
+		if (levels < 2) return srcImage;
+		BufferedImage grayscaleImage = toGrayscale(srcImage);
+		WritableRaster raster = grayscaleImage.getRaster();
+		for (int y = 0; y < grayscaleImage.getHeight(); y++) {
+			for (int x = 0; x < grayscaleImage.getWidth(); x++) {
+				int value = raster.getSample(x, y, 0);
+				int reduced = Math.round(value * (levels - 1) / 255f) * 255 / (levels - 1);
+				raster.setSample(x, y, 0, reduced);
+			}
 		}
 		return grayscaleImage;
 	}
