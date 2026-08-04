@@ -214,6 +214,8 @@ public class AozoraEpub3Applet extends JFrame
 	//倍率
 	JCheckBox jCheckImageScale;
 	JTextField jTextImageScale;
+	JCheckBox jCheckImageGrayscale;
+	JCheckBox jCheckImagePng;
 
 	//画像縮小
 	JCheckBox jCheckResizeW;
@@ -1091,6 +1093,21 @@ public class AozoraEpub3Applet extends JFrame
 		panel.add(jTextImageScale);
 		label = new JLabel("倍");
 		panel.add(label);
+
+		panel = new JPanel();
+		panel.setLayout(new BoxLayout(panel, BoxLayout.X_AXIS));
+		panel.setBorder(new NarrowTitledBorder("画像変換"));
+		tabPanel.add(panel);
+		jCheckImageGrayscale = new JCheckBox("グレースケール化");
+		jCheckImageGrayscale.setToolTipText("表紙と本文の画像を、元の画像形式のままグレースケールで収録します");
+		jCheckImageGrayscale.setFocusPainted(false);
+		jCheckImageGrayscale.setBorder(padding2);
+		panel.add(jCheckImageGrayscale);
+		jCheckImagePng = new JCheckBox("PNG化");
+		jCheckImagePng.setToolTipText("表紙と本文の画像をPNGに統一します。JPEGよりファイルサイズが大きくなることがあります");
+		jCheckImagePng.setFocusPainted(false);
+		jCheckImagePng.setBorder(padding2);
+		panel.add(jCheckImagePng);
 
 		////////////////////////////////
 		//画像回り込み
@@ -3452,6 +3469,10 @@ public class AozoraEpub3Applet extends JFrame
 		this.epub3ImageWriter.setImageParam(dispW, dispH, coverW, coverH, resizeW, resizeH, singlePageSizeW, singlePageSizeH, singlePageWidth,
 				imageSizeType, jCheckFitImage.isSelected(), jCheckSvgImage.isSelected(), rorateAngle,
 				imageScale, imageFloatType, imageFloatW, imageFloatH, jpegQualty, gamma, autoMarginLimitH, autoMarginLimitV, autoMarginWhiteLevel, autoMarginPadding, autoMarginNombre, autoMarginNombreSize);
+		this.epub3Writer.setImageGrayscale(jCheckImageGrayscale.isSelected());
+		this.epub3ImageWriter.setImageGrayscale(jCheckImageGrayscale.isSelected());
+		this.epub3Writer.setImagePng(jCheckImagePng.isSelected());
+		this.epub3ImageWriter.setImagePng(jCheckImagePng.isSelected());
 		//目次階層化設定
 		this.epub3Writer.setTocParam(jCheckNavNest.isSelected(), jCheckNcxNest.isSelected());
 
@@ -4699,6 +4720,8 @@ public class AozoraEpub3Applet extends JFrame
 		//画像倍率
 		setPropsSelected(jCheckImageScale, props, "ImageScaleChecked", false);
 		setPropsFloatText(jTextImageScale, props, "ImageScale");
+		setPropsSelected(jCheckImageGrayscale, props, "ImageGrayscale");
+		setPropsSelected(jCheckImagePng, props, "ImagePng");
 		//画像回り込み
 		setPropsSelected(jCheckImageFloat, props, "ImageFloat");
 		setPropsIntText(jTextImageFloatW, props, "ImageFloatW");
@@ -4909,6 +4932,8 @@ public class AozoraEpub3Applet extends JFrame
 		//画像倍率
 		props.setProperty("ImageScaleChecked", this.jCheckImageScale.isSelected()?"1":"");
 		props.setProperty("ImageScale", this.jTextImageScale.getText());
+		props.setProperty("ImageGrayscale", this.jCheckImageGrayscale.isSelected()?"1":"");
+		props.setProperty("ImagePng", this.jCheckImagePng.isSelected()?"1":"");
 		//画像回り込み
 		props.setProperty("ImageFloat", this.jCheckImageFloat.isSelected()?"1":"");
 		props.setProperty("ImageFloatType", ""+this.jComboImageFloatType.getSelectedIndex());

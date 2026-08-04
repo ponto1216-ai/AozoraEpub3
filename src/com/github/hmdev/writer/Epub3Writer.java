@@ -197,6 +197,8 @@ public class Epub3Writer
 
 	/** jpeg圧縮率 */
 	float jpegQuality = 0.8f;
+	boolean imageGrayscale = false;
+	boolean imagePng = false;
 
 	/** ガンマフィルタ */
 	LookupOp gammaOp;
@@ -344,6 +346,29 @@ public class Epub3Writer
 		this.autoMarginPadding = autoMarginPadding;
 		this.autoMarginNombre = autoMarginNombre;
 		this.autoMarginNombreSize = nombreSize;
+	}
+
+	public void setImageGrayscale(boolean imageGrayscale)
+	{
+		this.imageGrayscale = imageGrayscale;
+	}
+
+	public void setImagePng(boolean imagePng)
+	{
+		this.imagePng = imagePng;
+	}
+
+	String getOutputImageExt(ImageInfo imageInfo)
+	{
+		if (this.imagePng && !this.isKindle) return "png";
+		return imageInfo.getExt().replaceFirst("jpeg", "jpg");
+	}
+
+	void setOutputImageFileName(ImageInfo imageInfo, String imageId)
+	{
+		String ext = getOutputImageExt(imageInfo);
+		imageInfo.setOutExt(ext);
+		imageInfo.setOutFileName(imageId+"."+ext);
 	}
 
 	public void setTocParam(boolean navNest, boolean ncxNest)
@@ -577,8 +602,8 @@ public class Epub3Writer
 				String ext = coverImageInfo.getExt();
 				if (isKindle || ext.equals("jpeg")) ext = "jpg";
 				coverImageInfo.setId("0000");
-				coverImageInfo.setOutFileName("0000."+ext);
-				if (!ext.matches("^(png|jpg|jpeg|gif)$")) {
+				setOutputImageFileName(coverImageInfo, "0000");
+				if (!ext.matches("^(png|jpg|jpeg|gif)$") && !this.imagePng) {
 					LogAppender.println("表紙画像フォーマットエラー: "+bookInfo.coverFileName);
 					coverImageInfo = null;
 				} else {
@@ -603,7 +628,7 @@ public class Epub3Writer
 			if (isKindle || ext.equals("jpeg")) ext = "jpg";
 			coverImageInfo = ImageInfo.getImageInfo(ext, bookInfo.coverImage);
 			coverImageInfo.setId("0000");
-			coverImageInfo.setOutFileName("0000."+ext);
+			setOutputImageFileName(coverImageInfo, "0000");
 			coverImageInfo.setIsCover(true);
 			this.imageInfos.addFirst(coverImageInfo);
 		} else {
@@ -642,9 +667,7 @@ public class Epub3Writer
 						this.imageIndex++;
 						String imageId = decimalFormat.format(this.imageIndex);
 						insertCoverInfo.setId(imageId);
-						String ext = insertCoverInfo.getExt();
-						if (isKindle) ext = "jpg";
-						insertCoverInfo.setOutFileName(imageId+"."+ext);
+						setOutputImageFileName(insertCoverInfo, imageId);
 					}
 				}
 			}
@@ -941,26 +964,26 @@ public class Epub3Writer
 		imageInfo.rotateAngle = 0; //回転させない
 		ImageUtils.writeImage(null, srcImage, zos,imageInfo, this.jpegQuality, this.gammaOp,
 				0, 0, 0, this.dispW, this.dispH,
-				0, 0, 0, 0, 0, 0);
+				0, 0, 0, 0, 0, 0, this.imageGrayscale);
 	}
 	/** 表紙画像を出力 */
 	void writeCoverImage(InputStream is, ZipArchiveOutputStream zos, ImageInfo imageInfo) {
 		imageInfo.rotateAngle = 0; //回転させない
 		ImageUtils.writeImage(is, null, zos,imageInfo, this.jpegQuality, this.gammaOp,
 				0, this.coverW, this.coverH, this.dispW, this.dispH,
-				0, 0, 0, 0, 0, 0);
+				0, 0, 0, 0, 0, 0, this.imageGrayscale);
 	}
 	/** 画像を出力 */
 	void writeImage(InputStream is,ZipArchiveOutputStream zos, ImageInfo imageInfo) {
 		ImageUtils.writeImage(is, null, zos, imageInfo, this.jpegQuality, this.gammaOp,
 				this.maxImagePixels, this.maxImageW, this.maxImageH, this.dispW, this.dispH,
-				this.autoMarginLimitH, this.autoMarginLimitV, this.autoMarginWhiteLevel, this.autoMarginPadding, this.autoMarginNombre, this.autoMarginNombreSize);
+				this.autoMarginLimitH, this.autoMarginLimitV, this.autoMarginWhiteLevel, this.autoMarginPadding, this.autoMarginNombre, this.autoMarginNombreSize, this.imageGrayscale);
 	}
 	/** 画像を出力 */
 	void writeImage(BufferedImage srcImage, ZipArchiveOutputStream zos, ImageInfo imageInfo) {
 		ImageUtils.writeImage(null, srcImage, zos, imageInfo, this.jpegQuality, this.gammaOp,
 				this.maxImagePixels, this.maxImageW, this.maxImageH, this.dispW, this.dispH,
-				this.autoMarginLimitH,  this.autoMarginLimitV, this.autoMarginWhiteLevel, this.autoMarginPadding, this.autoMarginNombre, this.autoMarginNombreSize);
+				this.autoMarginLimitH,  this.autoMarginLimitV, this.autoMarginWhiteLevel, this.autoMarginPadding, this.autoMarginNombre, this.autoMarginNombreSize, this.imageGrayscale);
 	}
 
 	/** 本文を出力する */
@@ -1095,9 +1118,9 @@ public class Epub3Writer
 					isCover = true;
 				}
 			}
-			String outImageFileName = imageId+"."+imageInfo.getExt().replaceFirst("jpeg", "jpg");
 			imageInfo.setId(imageId);
-			imageInfo.setOutFileName(outImageFileName);
+			setOutputImageFileName(imageInfo, imageId);
+			String outImageFileName = imageInfo.getOutFileName();
 
 			//先頭に表紙ページ移動の場合でカバーページならnullを返して本文中から削除
 			if (bookInfo.insertCoverPage && isCover) return null;

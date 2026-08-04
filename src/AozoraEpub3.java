@@ -187,6 +187,12 @@ public class AozoraEpub3
 					imageScale, imageFloatType, imageFloatW, imageFloatH, jpegQualty, gamma, autoMarginLimitH, autoMarginLimitV, autoMarginWhiteLevel, autoMarginPadding, autoMarginNombre, nobreSize);
 			epub3ImageWriter.setImageParam(dispW, dispH, coverW, coverH, resizeW, resizeH, singlePageSizeW, singlePageSizeH, singlePageWidth, imageSizeType, fitImage, svgImage, rotateImage,
 					imageScale, imageFloatType, imageFloatW, imageFloatH, jpegQualty, gamma, autoMarginLimitH, autoMarginLimitV, autoMarginWhiteLevel, autoMarginPadding, autoMarginNombre, nobreSize);
+			boolean imageGrayscale = "1".equals(props.getProperty("ImageGrayscale"));
+			boolean imagePng = "1".equals(props.getProperty("ImagePng"));
+			epub3Writer.setImageGrayscale(imageGrayscale);
+			epub3ImageWriter.setImageGrayscale(imageGrayscale);
+			epub3Writer.setImagePng(imagePng);
+			epub3ImageWriter.setImagePng(imagePng);
 			//目次階層化設定
 			epub3Writer.setTocParam("1".equals(props.getProperty("NavNest")), "1".equals(props.getProperty("NcxNest")));
 

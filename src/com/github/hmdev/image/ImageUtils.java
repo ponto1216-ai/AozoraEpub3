@@ -141,9 +141,12 @@ public class ImageUtils
 	 * @param autoMarginPadding 余白除去後に追加するマージン */
 	static public void writeImage(InputStream is, BufferedImage srcImage, ZipArchiveOutputStream zos, ImageInfo imageInfo,
 			float jpegQuality, LookupOp gammaOp, int maxImagePixels, int maxImageW, int maxImageH, int dispW, int dispH,
-			int autoMarginLimitH, int autoMarginLimitV, int autoMarginWhiteLevel, float autoMarginPadding, int autoMarginNombre, float nombreSize) {
+			int autoMarginLimitH, int autoMarginLimitV, int autoMarginWhiteLevel, float autoMarginPadding, int autoMarginNombre, float nombreSize,
+			boolean grayscale) {
 		try {
 		String ext = imageInfo.getExt();
+		String outExt = imageInfo.getOutExt();
+		boolean forceReencode = grayscale || !ext.equals(outExt);
 
 		int imgW = imageInfo.getWidth();
 		int imgH = imageInfo.getHeight();
@@ -155,7 +158,7 @@ public class ImageUtils
 		byte[] imgBuf = null;
 
 		//回転とコントラスト調整なら読み込んでおく
-		if (srcImage == null && (imageInfo.rotateAngle != 0 || gammaOp != null)) srcImage = readImage(ext, is);
+		if (srcImage == null && (imageInfo.rotateAngle != 0 || gammaOp != null || forceReencode)) srcImage = readImage(ext, is);
 
 		int[] margin = null;
 		if (autoMarginLimitH > 0 || autoMarginLimitV > 0) {
@@ -206,7 +209,7 @@ public class ImageUtils
 		if (maxImageW > 0) scale = Math.min(scale, (double)maxImageW/w); //最大幅指定
 		if (maxImageH > 0) scale = Math.min(scale, (double)maxImageH/h); //最大高さ指定
 
-		if (scale >= 1 && (gammaOp == null || srcImage.getType() == BufferedImage.TYPE_INT_RGB)) {
+		if (scale >= 1 && !forceReencode && (gammaOp == null || srcImage.getType() == BufferedImage.TYPE_INT_RGB)) {
 			if (srcImage == null) {
 				//変更なしならそのままファイル出力
 				//IOUtils.copy(is, zos);
@@ -256,7 +259,8 @@ public class ImageUtils
 						srcImage = gammaOp.filter(srcImage, filterdImage);
 						srcImage = filterdImage;
 					}
-					_writeImage(zos, srcImage, ext, jpegQuality);
+					if (grayscale) srcImage = toGrayscale(srcImage);
+					_writeImage(zos, srcImage, outExt, jpegQuality);
 					imageInfo.setOutWidth(srcImage.getWidth());
 					imageInfo.setOutHeight(srcImage.getHeight());
 					if (imageInfo.rotateAngle != 0) LogAppender.println("画像回転"+": "+imageInfo.getOutFileName()+" ("+h+","+w+")");
@@ -378,7 +382,8 @@ public class ImageUtils
 					outImage = filterdImage;
 				}
 			}
-			_writeImage(zos, outImage, ext, jpegQuality);
+			if (grayscale) outImage = toGrayscale(outImage);
+			_writeImage(zos, outImage, outExt, jpegQuality);
 			imageInfo.setOutWidth(outImage.getWidth());
 			imageInfo.setOutHeight(outImage.getHeight());
 			if (scale < 1) {
@@ -392,6 +397,20 @@ public class ImageUtils
 			LogAppender.println("画像読み込みエラー: "+imageInfo.getOutFileName());
 			e.printStackTrace();
 		}
+	}
+	static BufferedImage toGrayscale(BufferedImage srcImage)
+	{
+		if (srcImage.getType() == BufferedImage.TYPE_BYTE_GRAY) return srcImage;
+		BufferedImage grayscaleImage = new BufferedImage(srcImage.getWidth(), srcImage.getHeight(), BufferedImage.TYPE_BYTE_GRAY);
+		Graphics2D g = grayscaleImage.createGraphics();
+		try {
+			g.setColor(Color.WHITE);
+			g.fillRect(0, 0, grayscaleImage.getWidth(), grayscaleImage.getHeight());
+			g.drawImage(srcImage, 0, 0, null);
+		} finally {
+			g.dispose();
+		}
+		return grayscaleImage;
 	}
 	/** 画像を出力 マージン指定があればカット
 	 * //@param margin カットするピクセル数(left, top, right, bottom) */

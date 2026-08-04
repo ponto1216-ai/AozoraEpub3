@@ -22,6 +22,8 @@ public class ImageInfo
 	String outFileName;
 	/** 画像フォーマット png jpg gif */
 	String ext;
+	/** 出力画像フォーマット 未指定なら入力形式を使用 */
+	String outExt;
 	
 	/** 画像幅 */
 	int width = -1;
@@ -108,10 +110,19 @@ public class ImageInfo
 	{
 		return this.ext;
 	}
+	public void setOutExt(String outExt)
+	{
+		this.outExt = outExt;
+	}
+	public String getOutExt()
+	{
+		return this.outExt == null ? this.ext : this.outExt;
+	}
 	/** mime形式(image/png)の形式フォーマット文字列を返却 */
 	public String getFormat()
 	{
-		return "image/"+(this.ext.equals("jpg")?"jpeg":this.ext);
+		String ext = this.getOutExt();
+		return "image/"+(ext.equals("jpg")?"jpeg":ext);
 	}
 	
 	public boolean getIsCover()
