@@ -76,6 +76,7 @@ import javax.swing.text.TextAction;
 
 import com.github.hmdev.converter.AozoraEpub3Converter;
 import com.github.hmdev.epub.EpubLayoutProcessor;
+import com.github.hmdev.epub.EpubNormalizer;
 import com.github.hmdev.epub.EpubSplitter;
 import com.github.hmdev.image.EpubImageProcessor;
 import com.github.hmdev.image.ImageInfoReader;
@@ -226,6 +227,7 @@ public class AozoraEpub3Applet extends JFrame
 	JRadioButton jRadioEpubProcessRemove;
 	JRadioButton jRadioEpubProcessSplit;
 	JRadioButton jRadioEpubProcessLayout;
+	JRadioButton jRadioEpubProcessNormalize;
 	JComboBox<String> jComboEpubProcessPreset;
 	boolean applyingEpubProcessPreset;
 	JComboBox<String> jComboEpubProcessImageMode;
@@ -1584,14 +1586,18 @@ public class AozoraEpub3Applet extends JFrame
 		jRadioEpubProcessSplit.setFocusPainted(false);
 		jRadioEpubProcessLayout = new JRadioButton("縦書き・横書きを変換する");
 		jRadioEpubProcessLayout.setFocusPainted(false);
+		jRadioEpubProcessNormalize = new JRadioButton("EPUBを正規化する");
+		jRadioEpubProcessNormalize.setFocusPainted(false);
 		buttonGroup.add(jRadioEpubProcessConvert);
 		buttonGroup.add(jRadioEpubProcessRemove);
 		buttonGroup.add(jRadioEpubProcessSplit);
 		buttonGroup.add(jRadioEpubProcessLayout);
+		buttonGroup.add(jRadioEpubProcessNormalize);
 		panel.add(jRadioEpubProcessConvert);
 		panel.add(jRadioEpubProcessRemove);
 		panel.add(jRadioEpubProcessSplit);
 		panel.add(jRadioEpubProcessLayout);
+		panel.add(jRadioEpubProcessNormalize);
 
 		panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
 		panel.setBorder(new NarrowTitledBorder("画像変換"));
@@ -1677,6 +1683,12 @@ public class AozoraEpub3Applet extends JFrame
 		label = new JLabel("（元の細かな組版は保持されない場合があります）");
 		panel.add(label);
 
+		panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
+		panel.setBorder(new NarrowTitledBorder("EPUB正規化"));
+		tabPanel.add(panel);
+		label = new JLabel("壊れた目次リンクと、EPUB 3.3で未定義のメタデータを修復します。本文・画像・CSSは変更しません。");
+		panel.add(label);
+
 		panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 2));
 		tabPanel.add(panel);
 		JButton jButtonEpubImage = new JButton("EPUBを選択して加工開始");
@@ -1686,6 +1698,7 @@ public class AozoraEpub3Applet extends JFrame
 		jButtonEpubImage.addActionListener(e -> {
 			if (jRadioEpubProcessSplit.isSelected()) processExistingEpubSplit();
 			else if (jRadioEpubProcessLayout.isSelected()) processExistingEpubLayout();
+			else if (jRadioEpubProcessNormalize.isSelected()) processExistingEpubNormalize();
 			else processExistingEpub();
 		});
 		panel.add(jButtonEpubImage);
@@ -1695,6 +1708,7 @@ public class AozoraEpub3Applet extends JFrame
 		jRadioEpubProcessRemove.addChangeListener(e -> { markEpubProcessPresetCustom(); updateEpubProcessControls(); });
 		jRadioEpubProcessSplit.addChangeListener(e -> { markEpubProcessPresetCustom(); updateEpubProcessControls(); });
 		jRadioEpubProcessLayout.addChangeListener(e -> { markEpubProcessPresetCustom(); updateEpubProcessControls(); });
+		jRadioEpubProcessNormalize.addChangeListener(e -> { markEpubProcessPresetCustom(); updateEpubProcessControls(); });
 		jComboEpubProcessImageMode.addActionListener(e -> { markEpubProcessPresetCustom(); updateEpubProcessControls(); });
 		jComboEpubRemoveTarget.addActionListener(e -> { markEpubProcessPresetCustom(); updateEpubProcessControls(); });
 		jCheckEpubProcessResize.addChangeListener(e -> { markEpubProcessPresetCustom(); updateEpubProcessControls(); });
@@ -3949,9 +3963,37 @@ public class AozoraEpub3Applet extends JFrame
 
 	private String getExistingEpubOutputSuffix()
 	{
+		if (jRadioEpubProcessNormalize.isSelected()) return "_正規化.epub";
 		if (jRadioEpubProcessLayout.isSelected()) return jComboEpubLayoutDirection.getSelectedIndex() == 0 ? "_横書き.epub" : "_縦書き.epub";
 		if (!jRadioEpubProcessRemove.isSelected()) return "_画像最適化.epub";
 		return new String[] {"_画像なし.epub", "_挿絵なし.epub", "_表紙なし.epub"}[jComboEpubRemoveTarget.getSelectedIndex()];
+	}
+
+	private void processExistingEpubNormalize()
+	{
+		if (isRunning()) return;
+		JFileChooser chooser = new JFileChooser(currentPath);
+		chooser.setDialogTitle("正規化するEPUBを選択（複数選択可）"); chooser.setFileFilter(new FileNameExtensionFilter("EPUBファイル(epub)", "epub")); chooser.setMultiSelectionEnabled(true);
+		if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+		File[] inputs = chooser.getSelectedFiles(); if (inputs.length == 0 && chooser.getSelectedFile() != null) inputs = new File[] {chooser.getSelectedFile()}; if (inputs.length == 0) return;
+		try {
+			StringBuilder text = new StringBuilder();
+			java.util.List<File> targets = new ArrayList<File>(); int noChangeCount = 0;
+			for (File input : inputs) { EpubNormalizer.Preview p = EpubNormalizer.preview(input); text.append(input.getName()).append("\n  未定義メタデータ: ").append(p.removedRenditionWritingMode).append("件\n  壊れた目次リンク: ").append(p.removedBrokenNavigationLinks).append("件\n  マニフェストへ登録: ").append(p.addedManifestItems).append("件\n  未登録・未参照ファイルを削除: ").append(p.removedUnmanifestedResources).append("件"); for (String target : p.brokenNavigationTargets) text.append("\n    壊れたリンク: ").append(target); for (String target : p.removedResourceNames) text.append("\n    削除: ").append(target); if (p.needsNormalization()) targets.add(input); else { noChangeCount++; text.append("\n    修正不要（出力しません）"); } text.append("\n"); }
+			if (targets.isEmpty()) { JOptionPane.showMessageDialog(this, "選択したEPUBはすべて正規化済みです。出力ファイルは作成しません。", "EPUB正規化", JOptionPane.INFORMATION_MESSAGE); return; }
+			if (noChangeCount > 0) text.insert(0, "修正不要のため出力しないEPUB: " + noChangeCount + "冊\n\n");
+			JTextArea area = new JTextArea(text.toString(), Math.min(24, 4 + inputs.length * 4), 72); area.setEditable(false); area.setCaretPosition(0);
+			if (JOptionPane.showConfirmDialog(this, new JScrollPane(area), "EPUB正規化プレビュー", JOptionPane.OK_CANCEL_OPTION, JOptionPane.INFORMATION_MESSAGE) != JOptionPane.OK_OPTION) return;
+			inputs = targets.toArray(new File[0]);
+		} catch (IOException e) { JOptionPane.showMessageDialog(this, "EPUBを解析できませんでした\n" + e.getMessage(), "EPUB正規化", JOptionPane.ERROR_MESSAGE); return; }
+		File[] outputs = new File[inputs.length]; String suffix = getExistingEpubOutputSuffix();
+		if (inputs.length == 1) {
+			JFileChooser out = new JFileChooser(inputs[0].getParentFile()); out.setDialogTitle("正規化後のEPUBの保存先を選択"); out.setFileFilter(new FileNameExtensionFilter("EPUBファイル(epub)", "epub")); out.setSelectedFile(new File(inputs[0].getName().replaceFirst("(?i)\\.epub$", "") + suffix));
+			if (out.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return; outputs[0] = out.getSelectedFile(); if (!outputs[0].getName().toLowerCase().endsWith(".epub")) outputs[0] = new File(outputs[0].getPath() + ".epub");
+		} else { JFileChooser out = new JFileChooser(inputs[0].getParentFile()); out.setDialogTitle("一括正規化したEPUBの保存フォルダーを選択"); out.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY); if (out.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return; for (int i=0; i<inputs.length; i++) outputs[i] = new File(out.getSelectedFile(), inputs[i].getName().replaceFirst("(?i)\\.epub$", "") + suffix); }
+		for (int i=0; i<inputs.length; i++) if (inputs[i].equals(outputs[i])) { JOptionPane.showMessageDialog(this, "元のEPUBとは別の保存先を指定してください", "EPUB正規化", JOptionPane.ERROR_MESSAGE); return; }
+		final File[] finalInputs = inputs, finalOutputs = outputs; final int[] succeeded = {0}; final java.util.List<String> failures = new ArrayList<String>();
+		new SwingWorker<Void, Void>() { @Override protected Void doInBackground() { running = true; setConvertEnabled(false); for (int i=0; i<finalInputs.length; i++) try { LogAppender.println("[" + (i+1) + "/" + finalInputs.length + "] EPUBを正規化します: " + finalInputs[i].getPath()); EpubNormalizer.process(finalInputs[i], finalOutputs[i]); succeeded[0]++; LogAppender.println("EPUB正規化完了: " + finalOutputs[i].getPath()); } catch (Exception e) { failures.add(finalInputs[i].getName() + ": " + e.getMessage()); LogAppender.error("EPUB正規化エラー: " + finalInputs[i].getName() + " : " + e.getMessage()); } return null; } @Override protected void done() { setConvertEnabled(true); running = false; StringBuilder result = new StringBuilder("EPUB正規化が完了しました\n成功: ").append(succeeded[0]).append("冊\n失敗: ").append(failures.size()).append("冊"); for (String failure : failures) result.append("\n").append(failure); JOptionPane.showMessageDialog(AozoraEpub3Applet.this, result.toString(), "EPUB正規化", failures.isEmpty()?JOptionPane.INFORMATION_MESSAGE:JOptionPane.WARNING_MESSAGE); } }.execute();
 	}
 
 	private void processExistingEpubLayout()
@@ -5455,7 +5497,8 @@ public class AozoraEpub3Applet extends JFrame
 		jRadioEpubProcessRemove.setSelected("remove".equals(epubProcessMode));
 		jRadioEpubProcessSplit.setSelected("split".equals(epubProcessMode));
 		jRadioEpubProcessLayout.setSelected("layout".equals(epubProcessMode));
-		jRadioEpubProcessConvert.setSelected(!jRadioEpubProcessRemove.isSelected() && !jRadioEpubProcessSplit.isSelected() && !jRadioEpubProcessLayout.isSelected());
+		jRadioEpubProcessNormalize.setSelected("normalize".equals(epubProcessMode));
+		jRadioEpubProcessConvert.setSelected(!jRadioEpubProcessRemove.isSelected() && !jRadioEpubProcessSplit.isSelected() && !jRadioEpubProcessLayout.isSelected() && !jRadioEpubProcessNormalize.isSelected());
 		int epubImageMode = -1; try { epubImageMode = Integer.parseInt(props.getProperty("EpubProcessImageMode")); } catch (Exception e) {}
 		if (epubImageMode < 0 || epubImageMode > 4) {
 			if (imageColorDepth == 2) epubImageMode = 2;
@@ -5696,7 +5739,7 @@ public class AozoraEpub3Applet extends JFrame
 		props.setProperty("ImagePng", this.jCheckImagePng.isSelected()?"1":"");
 		props.setProperty("ImageColorDepth", this.jCheckImageColorDepth.isSelected() ? new String[] {"2", "4", "16"}[this.jComboImageColorDepth.getSelectedIndex()] : "0");
 		props.setProperty("ImageDither", this.jCheckImageDither.isSelected()?"1":"");
-		props.setProperty("EpubProcessMode", this.jRadioEpubProcessSplit.isSelected()?"split":(this.jRadioEpubProcessRemove.isSelected()?"remove":(this.jRadioEpubProcessLayout.isSelected()?"layout":"convert")));
+		props.setProperty("EpubProcessMode", this.jRadioEpubProcessSplit.isSelected()?"split":(this.jRadioEpubProcessRemove.isSelected()?"remove":(this.jRadioEpubProcessLayout.isSelected()?"layout":(this.jRadioEpubProcessNormalize.isSelected()?"normalize":"convert"))));
 		props.setProperty("EpubProcessImageMode", ""+this.jComboEpubProcessImageMode.getSelectedIndex());
 		props.setProperty("EpubProcessDither", this.jCheckEpubProcessDither.isSelected()?"1":"");
 		props.setProperty("EpubProcessPng", this.jCheckEpubProcessPng.isSelected()?"1":"");
