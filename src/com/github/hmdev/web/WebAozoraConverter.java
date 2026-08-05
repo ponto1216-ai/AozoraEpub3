@@ -180,6 +180,16 @@ public class WebAozoraConverter
 		return this.queryMap != null;
 	}
 
+	/** ページ分割された目次を先頭ページの目次へ追加する。応答ページが想定外でも変換全体を止めない。 */
+	boolean appendPagedIndex(Elements tocIndex, Document pageDocument)
+	{
+		if (tocIndex == null || tocIndex.first() == null) return false;
+		Elements pageIndexes = getExtractElements(pageDocument, this.queryMap.get(ExtractId.INDEX));
+		if (pageIndexes == null || pageIndexes.first() == null) return false;
+		tocIndex.append(String.valueOf(pageIndexes.first().children().clone()));
+		return true;
+	}
+
 	public void canceled()
 	{
 		this.canceled = true;
@@ -379,10 +389,10 @@ public class WebAozoraConverter
                         LogAppender.println("キャッシュファイルを利用します。");
                     }
                     Document pagedoc = Jsoup.parse(pagerCacheFile, null);
-                    Elements index = Objects.requireNonNull(getExtractElements(pagedoc, this.queryMap.get(ExtractId.INDEX)).first()).children().clone();
-                    //Elements index = pagedoc.getElementsByClass("index_box").first().children().clone();
-                    Objects.requireNonNull(toc_index).append(String.valueOf(index));
-                }
+                    if (!appendPagedIndex(toc_index, pagedoc)) {
+                        LogAppender.println("一覧ページの目次を検出できないため、このページはスキップします: " + pagerUrl);
+                    }
+    }
 
             }
 
@@ -1199,20 +1209,22 @@ public class WebAozoraConverter
 		int idx = src.indexOf("//");
 		if (idx > 0) {
 			imagePath = CharUtils.escapeUrlToFile(src.substring(idx+2));
-		} else if(idx == 0 && src.indexOf("mitemin") != 0) { // なろう様 changes to new image provider
+		} else if(idx == 0) { // なろう様 changes to new image provider
 			src = "https:" + src;
-            if(webLageImage) {
+			// 画像CDNの直リンクはそのまま画像として取得する。拡大画像用のHTMLページだけを解析する。
+            if(webLageImage && isLargeImagePageUrl(src)) {
                 String ImageUrl = src.replace("userpageimage/viewimagebig/icode/", "");
                 String imagePagePath = CharUtils.escapeUrlToFile(ImageUrl);
                 File imagePageFile = new File(this.dstPath + "images/" + imagePagePath + "/index.html");
                 try {
                     cacheFile(ImageUrl, imagePageFile, this.urlString);
                     Document imagepagedoc = Jsoup.parse(imagePageFile, null);
-                    ImageUrl = imagepagedoc.getElementsByClass("imageview").first().children().attr("href");
-                } catch (URISyntaxException e) {
-                    throw new RuntimeException(e);
+                    String largeImageUrl = getLargeImageHref(imagepagedoc);
+                    if (largeImageUrl != null) src = new URI(ImageUrl).resolve(largeImageUrl).toString();
+                    else LogAppender.println("拡大画像ページから画像URLを取得できないため、元画像を使用します: " + ImageUrl);
+                } catch (Exception e) {
+                    LogAppender.println("拡大画像の取得に失敗したため、元画像を使用します: " + ImageUrl);
                 }
-                src = ImageUrl;
             }
             imagePath = CharUtils.escapeUrlToFile(src);
 		} else if (src.charAt(0) == '/') {
@@ -1284,6 +1296,21 @@ public class WebAozoraConverter
 			default: bw.append(ch);
 			}
 		}
+	}
+
+	static boolean isLargeImagePageUrl(String url)
+	{
+		return url != null && url.matches("(?i)https?://[^/]+/userpageimage/viewimagebig/icode/.*");
+	}
+
+	/** 拡大画像ページのリンクを取得する。CDN画像やエラーページでは null を返す。 */
+	static String getLargeImageHref(Document imagePage)
+	{
+		if (imagePage == null) return null;
+		Element imageView = imagePage.selectFirst(".imageview");
+		if (imageView == null) return null;
+		Element link = imageView.selectFirst("a[href]");
+		return link == null || link.attr("href").isEmpty() ? null : link.attr("href");
 	}
 
 	/** 画像拡張子を付けたエラーHTMLを再利用しないための軽量な形式確認 */

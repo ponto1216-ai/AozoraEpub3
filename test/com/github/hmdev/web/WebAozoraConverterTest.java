@@ -54,6 +54,28 @@ public class WebAozoraConverterTest
 	}
 
 	@Test
+	public void treatsImageCdnLinksAsImagesAndHandlesMissingLargeImageMarkup()
+	{
+		Assert.assertFalse(WebAozoraConverter.isLargeImagePageUrl("https://img1.mitemin.net/ic/example.jpg"));
+		Assert.assertTrue(WebAozoraConverter.isLargeImagePageUrl("https://example.mitemin.net/userpageimage/viewimagebig/icode/123"));
+		Assert.assertNull(WebAozoraConverter.getLargeImageHref(Jsoup.parse("<html><body>image CDN response</body></html>")));
+		Assert.assertEquals("https://img.example/large.jpg", WebAozoraConverter.getLargeImageHref(
+				Jsoup.parse("<div class=\"imageview\"><a href=\"https://img.example/large.jpg\"><img/></a></div>")));
+	}
+
+	@Test
+	public void skipsUnexpectedPagedIndexWithoutStoppingTheWholeNovel() throws Exception
+	{
+		WebAozoraConverter converter = WebAozoraConverter.createWebAozoraConverter(
+				"https://ncode.syosetu.com/n4764du/", new File("web"));
+		org.jsoup.select.Elements baseIndex = Jsoup.parse("<div class=\"p-eplist\"><div>第1話</div></div>").select(".p-eplist");
+		Assert.assertFalse(converter.appendPagedIndex(baseIndex, Jsoup.parse("<html><body>temporary response</body></html>")));
+		Assert.assertEquals(1, baseIndex.first().childrenSize());
+		Assert.assertTrue(converter.appendPagedIndex(baseIndex, Jsoup.parse("<div class=\"p-eplist\"><div>第101話</div></div>")));
+		Assert.assertEquals(2, baseIndex.first().childrenSize());
+	}
+
+	@Test
 	public void estimatesDownloadTimeIncludingConfiguredBatchPauses()
 	{
 		Assert.assertEquals(1_670_000L, WebAozoraConverter.estimateDownloadMillis(77, 10_000, 5, 60_000));
