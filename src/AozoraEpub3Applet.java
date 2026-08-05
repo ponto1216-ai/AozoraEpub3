@@ -348,12 +348,7 @@ public class AozoraEpub3Applet extends JFrame
 	JCheckBox jCheckWebModifiedOnly;
 	JCheckBox jCheckWebModifiedTail;
 	JTextField jTextWebModifiedExpire;
-	JCheckBox jCheckWebSplitChapter;
-	JCheckBox jCheckWebSelectedChapter;
-	JTextField jTextWebSelectedChapter;
 	JComboBox<String> jComboUa;
-	/** Web小説の章分冊ファイルに付ける章名 */
-	final Map<String, String> webChapterPartTitles = new HashMap<String, String>();
 
 	//テキストエリア
 	//JScrollPane jScrollPane;
@@ -2472,32 +2467,6 @@ public class AozoraEpub3Applet extends JFrame
 		jCheckWebConvertUpdated.setFocusPainted(false);
 		jCheckWebConvertUpdated.setBorder(padding2);
 		panel.add(jCheckWebConvertUpdated);
-
-		panel = new JPanel();
-		panel.setLayout(new BoxLayout(panel, BoxLayout.X_AXIS));
-		panel.setBorder(new NarrowTitledBorder("章分冊"));
-		tabPanel.add(panel);
-		jCheckWebSplitChapter = new JCheckBox("章ごとに分冊");
-		jCheckWebSplitChapter.setToolTipText("作品ページの章・部見出しごとに別のePubを出力します。章見出しのない作品は通常どおり1冊で出力します");
-		jCheckWebSplitChapter.setFocusPainted(false);
-		jCheckWebSplitChapter.setBorder(padding2);
-		panel.add(jCheckWebSplitChapter);
-		jCheckWebSelectedChapter = new JCheckBox("指定範囲で分冊");
-		jCheckWebSelectedChapter.setToolTipText("分冊する章範囲を 1-3;4-6 の形式で指定します。章見出しがない作品では話数として扱い、; で区切った範囲ごとに1冊のePubを出力します");
-		jCheckWebSelectedChapter.setFocusPainted(false);
-		jCheckWebSelectedChapter.setBorder(padding2);
-		jCheckWebSelectedChapter.addChangeListener(e -> {
-			jTextWebSelectedChapter.setEditable(jCheckWebSelectedChapter.isSelected());
-			jTextWebSelectedChapter.repaint();
-		});
-		panel.add(jCheckWebSelectedChapter);
-		jTextWebSelectedChapter = new JTextField("");
-		jTextWebSelectedChapter.setToolTipText(jCheckWebSelectedChapter.getToolTipText());
-		jTextWebSelectedChapter.setEditable(false);
-		jTextWebSelectedChapter.setMaximumSize(new Dimension(120, 22));
-		jTextWebSelectedChapter.setPreferredSize(new Dimension(120, 22));
-		jTextWebSelectedChapter.addFocusListener(new TextSelectFocusListener(jTextWebSelectedChapter));
-		panel.add(jTextWebSelectedChapter);
 
 		//変換対象
 		panel = new JPanel();
@@ -4701,11 +4670,6 @@ public class AozoraEpub3Applet extends JFrame
 			}
 		}
 
-		String chapterPartTitle = this.webChapterPartTitles.get(srcFile.getAbsolutePath());
-		if (chapterPartTitle != null && !chapterPartTitle.isEmpty()) {
-			bookInfo.title = (bookInfo.title == null ? "" : bookInfo.title) + " - " + chapterPartTitle;
-		}
-
 		boolean autoFileName = this.jCheckAutoFileName.isSelected();
 		boolean overWrite = this.jCheckOverWrite.isSelected();
 
@@ -4952,41 +4916,7 @@ public class AozoraEpub3Applet extends JFrame
 				//同名のファイルが無い場合はconverted.pngを利用する設定に変更
 				if (jComboCover.getSelectedIndex() == 0 || jComboCover.getSelectedIndex() == 1) jComboCover.setSelectedIndex(1);
 
-				//章ごとの分冊・指定章出力
-				this.webChapterPartTitles.clear();
-				File[] webSourceFiles = new File[]{srcFile};
-				boolean selectChapters = this.jCheckWebSelectedChapter.isSelected();
-				if (this.jCheckWebSplitChapter.isSelected() || selectChapters) {
-					if (selectChapters && this.jTextWebSelectedChapter.getText().trim().isEmpty()) {
-						throw new IllegalArgumentException("分冊範囲を 1-3;4-6 の形式で入力してください");
-					}
-					List<Set<Integer>> chapterGroups = selectChapters
-						? WebAozoraConverter.parseChapterGroups(this.jTextWebSelectedChapter.getText())
-						: Collections.<Set<Integer>>emptyList();
-					List<WebAozoraConverter.ChapterTextFile> chapterFiles = WebAozoraConverter.splitConvertedTextByChapterGroups(srcFile, chapterGroups);
-					if (chapterFiles.isEmpty() && selectChapters) {
-						chapterFiles = WebAozoraConverter.splitConvertedTextByEpisodeGroups(srcFile, chapterGroups);
-					}
-					if (chapterFiles.isEmpty()) {
-						if (selectChapters) {
-							LogAppender.println("話の区切りがないため、指定範囲は出力できませんでした");
-							continue;
-						}
-						LogAppender.println("章見出しがないため、1冊として出力します");
-					} else {
-						webSourceFiles = new File[chapterFiles.size()];
-						for (int partIndex = 0; partIndex < chapterFiles.size(); partIndex++) {
-							WebAozoraConverter.ChapterTextFile chapterFile = chapterFiles.get(partIndex);
-							webSourceFiles[partIndex] = chapterFile.file;
-							this.webChapterPartTitles.put(chapterFile.file.getAbsolutePath(), chapterFile.chapterTitle);
-						}
-					}
-				}
-				try {
-					convertFiles(webSourceFiles, dstPath);
-				} finally {
-					this.webChapterPartTitles.clear();
-				}
+				convertFiles(new File[]{srcFile}, dstPath);
 
 				//設定を戻す
 				jComboEncType.setSelectedItem(encType);
@@ -5601,9 +5531,6 @@ public class AozoraEpub3Applet extends JFrame
 		setPropsSelected(jCheckWebModifiedTail, props, "WebModifiedTail");
 		setPropsSelected(jCheckWebBeforeChapter, props, "WebBeforeChapter");
 		setPropsIntText(jTextWebBeforeChapterCount, props, "WebBeforeChapterCount");
-		setPropsSelected(jCheckWebSplitChapter, props, "WebSplitChapter");
-		setPropsSelected(jCheckWebSelectedChapter, props, "WebSelectedChapter");
-		setPropsText(jTextWebSelectedChapter, props, "WebSelectedChapterNumbers");
 	}
 
 	/** アプレットの設定状態をpropsに保存 */
@@ -5781,9 +5708,6 @@ public class AozoraEpub3Applet extends JFrame
 		props.setProperty("WebModifiedTail", this.jCheckWebModifiedTail.isSelected()?"1":"");
 		props.setProperty("WebBeforeChapter", this.jCheckWebBeforeChapter.isSelected()?"1":"");
 		props.setProperty("WebBeforeChapterCount", this.jTextWebBeforeChapterCount.getText());
-		props.setProperty("WebSplitChapter", this.jCheckWebSplitChapter.isSelected()?"1":"");
-		props.setProperty("WebSelectedChapter", this.jCheckWebSelectedChapter.isSelected()?"1":"");
-		props.setProperty("WebSelectedChapterNumbers", this.jTextWebSelectedChapter.getText());
 		props.setProperty("MergeTextFiles", this.jCheckMergeTextFiles.isSelected()?"1":"");
 
 		//確認ダイアログの元画像を残す

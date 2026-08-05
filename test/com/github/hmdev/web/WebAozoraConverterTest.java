@@ -4,8 +4,6 @@ import java.io.File;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.List;
-import java.util.Set;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -61,89 +59,6 @@ public class WebAozoraConverterTest
 		Assert.assertEquals(1_670_000L, WebAozoraConverter.estimateDownloadMillis(77, 10_000, 5, 60_000));
 		Assert.assertEquals("約27分50秒", WebAozoraConverter.formatEstimatedDownloadTime(1_670_000L));
 		Assert.assertEquals("約0秒", WebAozoraConverter.formatEstimatedDownloadTime(0));
-	}
-
-	@Test
-	public void splitsConvertedTextAtMajorChapterHeadings() throws Exception
-	{
-		File source = File.createTempFile("web-chapter-split", ".txt");
-		String text = "作品名\n著者\n"
-			+ "\n［＃改ページ］\n［＃大見出し］第一部［＃大見出し終わり］\n第一話\n"
-			+ "\n［＃改ページ］\n［＃大見出し］第二部［＃大見出し終わり］\n第二話\n"
-			+ "\n［＃改ページ］\n底本： https://example.com/\n";
-		Files.writeString(source.toPath(), text, StandardCharsets.UTF_8);
-		try {
-			List<WebAozoraConverter.ChapterTextFile> chapters = WebAozoraConverter.splitConvertedTextByChapters(source, Set.of(2));
-			Assert.assertEquals(1, chapters.size());
-			Assert.assertEquals("第二部", chapters.get(0).chapterTitle);
-			String chapterText = Files.readString(chapters.get(0).file.toPath(), StandardCharsets.UTF_8);
-			Assert.assertTrue(chapterText.contains("作品名"));
-			Assert.assertTrue(chapterText.contains("第二話"));
-			Assert.assertFalse(chapterText.contains("第一話"));
-			Assert.assertTrue(chapterText.contains("底本："));
-			Files.deleteIfExists(chapters.get(0).file.toPath());
-		} finally {
-			Files.deleteIfExists(source.toPath());
-		}
-	}
-
-	@Test
-	public void parsesSelectedChapterNumbers()
-	{
-		Assert.assertEquals(Set.of(1, 3, 4, 5), WebAozoraConverter.parseChapterNumbers("1, 3-5"));
-	}
-
-	@Test
-	public void groupsChapterRangesIntoOneEpubSource() throws Exception
-	{
-		File source = File.createTempFile("web-chapter-group", ".txt");
-		String text = "作品名\n著者\n"
-			+ "\n［＃改ページ］\n［＃大見出し］第一部［＃大見出し終わり］\n第一話\n"
-			+ "\n［＃改ページ］\n［＃大見出し］第二部［＃大見出し終わり］\n第二話\n";
-		Files.writeString(source.toPath(), text, StandardCharsets.UTF_8);
-		try {
-			List<Set<Integer>> groups = WebAozoraConverter.parseChapterGroups("1-2");
-			List<WebAozoraConverter.ChapterTextFile> chapters = WebAozoraConverter.splitConvertedTextByChapterGroups(source, groups);
-			Assert.assertEquals(1, chapters.size());
-			Assert.assertEquals("第一部 ～ 第二部", chapters.get(0).chapterTitle);
-			String chapterText = Files.readString(chapters.get(0).file.toPath(), StandardCharsets.UTF_8);
-			Assert.assertTrue(chapterText.contains("第一話"));
-			Assert.assertTrue(chapterText.contains("第二話"));
-			Files.deleteIfExists(chapters.get(0).file.toPath());
-		} finally {
-			Files.deleteIfExists(source.toPath());
-		}
-	}
-
-	@Test
-	public void parsesChapterGroupsSeparatedBySemicolons()
-	{
-		List<Set<Integer>> groups = WebAozoraConverter.parseChapterGroups("1-3;4-6");
-		Assert.assertEquals(2, groups.size());
-		Assert.assertEquals(Set.of(1, 2, 3), groups.get(0));
-		Assert.assertEquals(Set.of(4, 5, 6), groups.get(1));
-	}
-
-	@Test
-	public void fallsBackToEpisodeRangesWhenThereAreNoChapterHeadings() throws Exception
-	{
-		File source = File.createTempFile("web-episode-group", ".txt");
-		String text = "作品名\n著者\n"
-			+ "\n［＃改ページ］\n［＃中見出し］第一話［＃中見出し終わり］\n本文1\n"
-			+ "\n［＃改ページ］\n［＃中見出し］第二話［＃中見出し終わり］\n本文2\n"
-			+ "\n［＃改ページ］\n［＃中見出し］第三話［＃中見出し終わり］\n本文3\n";
-		Files.writeString(source.toPath(), text, StandardCharsets.UTF_8);
-		try {
-			List<WebAozoraConverter.ChapterTextFile> episodes = WebAozoraConverter.splitConvertedTextByEpisodeGroups(source,
-				WebAozoraConverter.parseChapterGroups("1-2;3"));
-			Assert.assertEquals(2, episodes.size());
-			Assert.assertEquals("第一話 ～ 第二話", episodes.get(0).chapterTitle);
-			Assert.assertTrue(Files.readString(episodes.get(0).file.toPath(), StandardCharsets.UTF_8).contains("本文2"));
-			Assert.assertTrue(Files.readString(episodes.get(1).file.toPath(), StandardCharsets.UTF_8).contains("本文3"));
-			for (WebAozoraConverter.ChapterTextFile episode : episodes) Files.deleteIfExists(episode.file.toPath());
-		} finally {
-			Files.deleteIfExists(source.toPath());
-		}
 	}
 
 	@Test
