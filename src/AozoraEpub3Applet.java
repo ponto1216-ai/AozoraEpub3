@@ -75,6 +75,7 @@ import javax.swing.text.JTextComponent;
 import javax.swing.text.TextAction;
 
 import com.github.hmdev.converter.AozoraEpub3Converter;
+import com.github.hmdev.epub.EpubSplitter;
 import com.github.hmdev.image.EpubImageProcessor;
 import com.github.hmdev.image.ImageInfoReader;
 import com.github.hmdev.info.BookInfo;
@@ -222,6 +223,7 @@ public class AozoraEpub3Applet extends JFrame
 	JCheckBox jCheckImageDither;
 	JRadioButton jRadioEpubProcessConvert;
 	JRadioButton jRadioEpubProcessRemove;
+	JRadioButton jRadioEpubProcessSplit;
 	JComboBox<String> jComboEpubProcessPreset;
 	boolean applyingEpubProcessPreset;
 	JComboBox<String> jComboEpubProcessImageMode;
@@ -233,6 +235,10 @@ public class AozoraEpub3Applet extends JFrame
 	JComboBox<String> jComboEpubRemoveTarget;
 	JCheckBox jCheckEpubRemoveChapterLeadingImages;
 	JCheckBox jCheckEpubRemoveImageOnlyPages;
+	JComboBox<String> jComboEpubSplitMode;
+	JTextField jTextEpubSplitValue;
+	JLabel jLabelEpubSplitValue;
+	JCheckBox jCheckEpubSplitCommonPages;
 
 	//画像縮小
 	JCheckBox jCheckResizeW;
@@ -1576,10 +1582,14 @@ public class AozoraEpub3Applet extends JFrame
 		jRadioEpubProcessConvert.setFocusPainted(false);
 		jRadioEpubProcessRemove = new JRadioButton("画像を削除する");
 		jRadioEpubProcessRemove.setFocusPainted(false);
+		jRadioEpubProcessSplit = new JRadioButton("EPUBを分割する");
+		jRadioEpubProcessSplit.setFocusPainted(false);
 		buttonGroup.add(jRadioEpubProcessConvert);
 		buttonGroup.add(jRadioEpubProcessRemove);
+		buttonGroup.add(jRadioEpubProcessSplit);
 		panel.add(jRadioEpubProcessConvert);
 		panel.add(jRadioEpubProcessRemove);
+		panel.add(jRadioEpubProcessSplit);
 
 		panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
 		panel.setBorder(new NarrowTitledBorder("画像変換"));
@@ -1635,18 +1645,41 @@ public class AozoraEpub3Applet extends JFrame
 		jCheckEpubRemoveImageOnlyPages.setFocusPainted(false);
 		panel.add(jCheckEpubRemoveImageOnlyPages);
 
+		panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 1));
+		panel.setBorder(new NarrowTitledBorder("EPUB分割"));
+		tabPanel.add(panel);
+		label = new JLabel("分割方法:");
+		panel.add(label);
+		jComboEpubSplitMode = new JComboBox<String>(new String[] {"指定話数ごと", "話範囲指定", "指定章ごと", "章範囲指定"});
+		jComboEpubSplitMode.setToolTipText("話数・章数ごとの自動分割、または話・章の範囲指定を選べます");
+		panel.add(jComboEpubSplitMode);
+		jLabelEpubSplitValue = new JLabel("1冊あたり:");
+		panel.add(jLabelEpubSplitValue);
+		jTextEpubSplitValue = new JTextField("50");
+		jTextEpubSplitValue.setPreferredSize(new Dimension(180, 20));
+		jTextEpubSplitValue.setToolTipText("指定話数ごと: 50  /  話範囲: 1-50,51-100,101-  /  指定章ごと: 3  /  章範囲: 1-3,4-6");
+		panel.add(jTextEpubSplitValue);
+		jCheckEpubSplitCommonPages = new JCheckBox("表紙・タイトル・目次を各分冊に含める", true);
+		jCheckEpubSplitCommonPages.setToolTipText("表紙、タイトルページ、目次などの共通ページを各分冊へ収録します");
+		jCheckEpubSplitCommonPages.setFocusPainted(false);
+		panel.add(jCheckEpubSplitCommonPages);
+
 		panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 2));
 		tabPanel.add(panel);
 		JButton jButtonEpubImage = new JButton("EPUBを選択して加工開始");
 		jButtonEpubImage.setToolTipText("1冊または複数のEPUBを選択して処理を開始します。複数選択時は保存フォルダーを指定します");
 		jButtonEpubImage.setBorder(padding5H3V);
 		jButtonEpubImage.setFocusPainted(false);
-		jButtonEpubImage.addActionListener(e -> processExistingEpub());
+		jButtonEpubImage.addActionListener(e -> {
+			if (jRadioEpubProcessSplit.isSelected()) processExistingEpubSplit();
+			else processExistingEpub();
+		});
 		panel.add(jButtonEpubImage);
 
 		jComboEpubProcessPreset.addActionListener(e -> applyEpubProcessPreset());
 		jRadioEpubProcessConvert.addChangeListener(e -> { markEpubProcessPresetCustom(); updateEpubProcessControls(); });
 		jRadioEpubProcessRemove.addChangeListener(e -> { markEpubProcessPresetCustom(); updateEpubProcessControls(); });
+		jRadioEpubProcessSplit.addChangeListener(e -> { markEpubProcessPresetCustom(); updateEpubProcessControls(); });
 		jComboEpubProcessImageMode.addActionListener(e -> { markEpubProcessPresetCustom(); updateEpubProcessControls(); });
 		jComboEpubRemoveTarget.addActionListener(e -> { markEpubProcessPresetCustom(); updateEpubProcessControls(); });
 		jCheckEpubProcessResize.addChangeListener(e -> { markEpubProcessPresetCustom(); updateEpubProcessControls(); });
@@ -1654,6 +1687,17 @@ public class AozoraEpub3Applet extends JFrame
 		jCheckEpubProcessPng.addChangeListener(e -> markEpubProcessPresetCustom());
 		jCheckEpubRemoveChapterLeadingImages.addChangeListener(e -> markEpubProcessPresetCustom());
 		jCheckEpubRemoveImageOnlyPages.addChangeListener(e -> markEpubProcessPresetCustom());
+		jComboEpubSplitMode.addActionListener(e -> {
+			int mode = jComboEpubSplitMode.getSelectedIndex();
+			jLabelEpubSplitValue.setText(mode == 0 ? "1冊あたり:" : (mode == 1 ? "話範囲:" : (mode == 2 ? "1冊あたりの章:" : "章範囲:")));
+			if (mode == 0 && !jTextEpubSplitValue.getText().matches("\\d+")) jTextEpubSplitValue.setText("50");
+			else if (mode == 1 && jTextEpubSplitValue.getText().matches("\\d+")) jTextEpubSplitValue.setText("1-50,51-");
+			else if (mode == 2 && (!jTextEpubSplitValue.getText().matches("\\d+") || "50".equals(jTextEpubSplitValue.getText()))) jTextEpubSplitValue.setText("3");
+			else if (mode == 3 && (jTextEpubSplitValue.getText().matches("\\d+") || "1-50,51-".equals(jTextEpubSplitValue.getText()))) jTextEpubSplitValue.setText("1-3,4-6");
+			markEpubProcessPresetCustom();
+			updateEpubProcessControls();
+		});
+		jCheckEpubSplitCommonPages.addChangeListener(e -> markEpubProcessPresetCustom());
 		updateEpubProcessControls();
 
 		////////////////////////////////////////////////////////////////
@@ -3755,6 +3799,8 @@ public class AozoraEpub3Applet extends JFrame
 	{
 		if (jRadioEpubProcessConvert == null) return;
 		boolean convert = jRadioEpubProcessConvert.isSelected();
+		boolean remove = jRadioEpubProcessRemove.isSelected();
+		boolean split = jRadioEpubProcessSplit.isSelected();
 		boolean reducedLevels = convert && jComboEpubProcessImageMode.getSelectedIndex() >= 2;
 		jComboEpubProcessImageMode.setEnabled(convert);
 		jCheckEpubProcessDither.setEnabled(reducedLevels);
@@ -3764,9 +3810,12 @@ public class AozoraEpub3Applet extends JFrame
 		boolean resize = convert && jCheckEpubProcessResize.isSelected();
 		jTextEpubProcessResizeW.setEnabled(resize);
 		jTextEpubProcessResizeH.setEnabled(resize);
-		jComboEpubRemoveTarget.setEnabled(!convert);
-		jCheckEpubRemoveChapterLeadingImages.setEnabled(!convert && jComboEpubRemoveTarget.getSelectedIndex() == 2);
-		jCheckEpubRemoveImageOnlyPages.setEnabled(!convert);
+		jComboEpubRemoveTarget.setEnabled(remove);
+		jCheckEpubRemoveChapterLeadingImages.setEnabled(remove && jComboEpubRemoveTarget.getSelectedIndex() == 2);
+		jCheckEpubRemoveImageOnlyPages.setEnabled(remove);
+		jComboEpubSplitMode.setEnabled(split);
+		jTextEpubSplitValue.setEnabled(split);
+		jCheckEpubSplitCommonPages.setEnabled(split);
 	}
 
 	private void applyEpubProcessPreset()
@@ -3910,6 +3959,213 @@ public class AozoraEpub3Applet extends JFrame
 	{
 		if (!jRadioEpubProcessRemove.isSelected()) return "_画像最適化.epub";
 		return new String[] {"_画像なし.epub", "_挿絵なし.epub", "_表紙なし.epub"}[jComboEpubRemoveTarget.getSelectedIndex()];
+	}
+
+	private static final class EpubSplitPlan
+	{
+		final File inputFile;
+		final EpubSplitter.Analysis analysis;
+		final java.util.List<EpubSplitter.Range> ranges;
+		final java.util.List<String> rangeLabels;
+
+		EpubSplitPlan(File inputFile, EpubSplitter.Analysis analysis, java.util.List<EpubSplitter.Range> ranges, java.util.List<String> rangeLabels)
+		{
+			this.inputFile = inputFile;
+			this.analysis = analysis;
+			this.ranges = ranges;
+			this.rangeLabels = rangeLabels;
+		}
+	}
+
+	private static final class EpubSplitJob
+	{
+		final EpubSplitPlan plan;
+		final EpubSplitter.Range range;
+		final String rangeLabel;
+		final File outputFile;
+
+		EpubSplitJob(EpubSplitPlan plan, EpubSplitter.Range range, String rangeLabel, File outputFile)
+		{
+			this.plan = plan;
+			this.range = range;
+			this.rangeLabel = rangeLabel;
+			this.outputFile = outputFile;
+		}
+	}
+
+	private EpubSplitPlan createEpubSplitPlan(File inputFile, EpubSplitter.Analysis analysis) throws IOException
+	{
+		String value = jTextEpubSplitValue.getText().trim();
+		java.util.List<EpubSplitter.Range> ranges = new ArrayList<EpubSplitter.Range>();
+		java.util.List<String> labels = new ArrayList<String>();
+		int mode = jComboEpubSplitMode.getSelectedIndex();
+		if (mode >= 2) {
+			if (analysis.sections.isEmpty()) throw new IOException(inputFile.getName() + " の目次から章を検出できませんでした。話範囲指定を使用してください");
+			java.util.List<EpubSplitter.Range> sectionRanges;
+			if (mode == 2) {
+				try {
+					int size = Integer.parseInt(value);
+					if (size < 1) throw new NumberFormatException();
+					sectionRanges = EpubSplitter.createFixedRanges(size, analysis.sections.size());
+				} catch (NumberFormatException e) {
+					throw new IOException("1冊あたりの章数を1以上の整数で入力してください");
+				}
+			} else {
+				sectionRanges = EpubSplitter.parseRanges(value, analysis.sections.size());
+			}
+			for (EpubSplitter.Range sectionRange : sectionRanges) {
+				EpubSplitter.Section first = analysis.sections.get(sectionRange.start - 1);
+				EpubSplitter.Section last = analysis.sections.get(sectionRange.end - 1);
+				ranges.add(new EpubSplitter.Range(first.startChapter, last.endChapter));
+				labels.add("章" + sectionRange);
+			}
+		} else if (mode == 1) {
+			ranges.addAll(EpubSplitter.parseRanges(value, analysis.chapters.size()));
+		} else {
+			try {
+				int size = Integer.parseInt(value);
+				if (size < 1) throw new NumberFormatException();
+				ranges.addAll(EpubSplitter.createFixedRanges(size, analysis.chapters.size()));
+			} catch (NumberFormatException e) {
+				throw new IOException("1冊あたりの話数を1以上の整数で入力してください");
+			}
+		}
+		while (labels.size() < ranges.size()) labels.add("");
+		return new EpubSplitPlan(inputFile, analysis, ranges, labels);
+	}
+
+	private boolean showExistingEpubSplitPreview(java.util.List<EpubSplitPlan> plans)
+	{
+		StringBuilder text = new StringBuilder();
+		int totalVolumes = 0;
+		for (EpubSplitPlan plan : plans) totalVolumes += plan.ranges.size();
+		text.append("対象: ").append(plans.size()).append("冊 / 出力予定: ").append(totalVolumes).append("冊\n");
+		text.append("共通ページ: ").append(jCheckEpubSplitCommonPages.isSelected() ? "各分冊に含める" : "含めない").append("\n");
+		for (EpubSplitPlan plan : plans) {
+			text.append("\n").append(plan.inputFile.getName())
+					.append("\n  作品名: ").append(plan.analysis.title)
+					.append("\n  本文: ").append(plan.analysis.chapters.size()).append("話");
+			if (!plan.analysis.sections.isEmpty()) text.append(" / 検出章: ").append(plan.analysis.sections.size()).append("章");
+			if (plan.analysis.commonSpineCount > 0) text.append(" / 共通ページ: ").append(plan.analysis.commonSpineCount).append("ページ");
+			for (int i = 0; i < plan.ranges.size(); i++) {
+				EpubSplitter.Range range = plan.ranges.get(i);
+				String rangeLabel = plan.rangeLabels.get(i);
+				EpubSplitter.Chapter first = plan.analysis.chapters.get(range.start - 1);
+				EpubSplitter.Chapter last = plan.analysis.chapters.get(range.end - 1);
+				text.append("\n  ").append(i + 1).append("冊目: ");
+				if (!rangeLabel.isEmpty()) text.append(rangeLabel).append(" → 本文");
+				text.append(range)
+						.append("  ").append(first.title);
+				if (range.start != range.end) text.append(" ～ ").append(last.title);
+			}
+			text.append("\n");
+		}
+		JTextArea previewArea = new JTextArea(text.toString(), 26, 76);
+		previewArea.setEditable(false);
+		previewArea.setCaretPosition(0);
+		Object[] choices = {"この内容で分割", "キャンセル"};
+		return JOptionPane.showOptionDialog(this, new JScrollPane(previewArea), "EPUB分割プレビュー",
+				JOptionPane.DEFAULT_OPTION, JOptionPane.INFORMATION_MESSAGE, null, choices, choices[0]) == 0;
+	}
+
+	private String createEpubSplitOutputName(EpubSplitPlan plan, EpubSplitter.Range range, String rangeLabel, int volume)
+	{
+		String baseName = plan.inputFile.getName().replaceFirst("(?i)\\.epub$", "");
+		int digits = Math.max(2, Integer.toString(plan.ranges.size()).length());
+		String label = rangeLabel.isEmpty() ? "" : "_" + rangeLabel;
+		return baseName + "_" + String.format("%0" + digits + "d", volume) + label + "_" + range + ".epub";
+	}
+
+	private void processExistingEpubSplit()
+	{
+		if (isRunning()) return;
+		JFileChooser inputChooser = new JFileChooser(currentPath);
+		inputChooser.setDialogTitle("分割するEPUBを選択（複数選択可）");
+		inputChooser.setFileFilter(new FileNameExtensionFilter("EPUBファイル(epub)", "epub"));
+		inputChooser.setMultiSelectionEnabled(true);
+		if (inputChooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+		File[] inputFiles = inputChooser.getSelectedFiles();
+		if (inputFiles.length == 0 && inputChooser.getSelectedFile() != null) inputFiles = new File[] {inputChooser.getSelectedFile()};
+		if (inputFiles.length == 0) return;
+
+		java.util.List<EpubSplitPlan> plans = new ArrayList<EpubSplitPlan>();
+		try {
+			for (File inputFile : inputFiles) {
+				EpubSplitter.Analysis analysis = EpubSplitter.analyze(inputFile);
+				if (analysis.chapters.isEmpty()) throw new IOException(inputFile.getName() + " に分割可能な本文がありません");
+				plans.add(createEpubSplitPlan(inputFile, analysis));
+			}
+		} catch (Exception e) {
+			JOptionPane.showMessageDialog(this, "EPUBを解析できませんでした\n" + e.getMessage(), "EPUB分割", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		if (!showExistingEpubSplitPreview(plans)) return;
+
+		JFileChooser outputChooser = new JFileChooser(inputFiles[0].getParentFile());
+		outputChooser.setDialogTitle("分割したEPUBの保存フォルダーを選択");
+		outputChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+		if (outputChooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+		File outputDirectory = outputChooser.getSelectedFile();
+		java.util.List<EpubSplitJob> jobs = new ArrayList<EpubSplitJob>();
+		Set<String> outputPaths = new HashSet<String>();
+		for (EpubSplitPlan plan : plans) {
+			for (int i = 0; i < plan.ranges.size(); i++) {
+				EpubSplitter.Range range = plan.ranges.get(i);
+				String rangeLabel = plan.rangeLabels.get(i);
+				File outputFile = new File(outputDirectory, createEpubSplitOutputName(plan, range, rangeLabel, i + 1));
+				if (!outputPaths.add(outputFile.getAbsolutePath().toLowerCase(Locale.ROOT))) {
+					JOptionPane.showMessageDialog(this, "同じ名前の出力が重複します。入力EPUBのファイル名を変更してから再実行してください\n" + outputFile.getName(), "EPUB分割", JOptionPane.ERROR_MESSAGE);
+					return;
+				}
+				jobs.add(new EpubSplitJob(plan, range, rangeLabel, outputFile));
+			}
+		}
+		int existingCount = 0;
+		for (EpubSplitJob job : jobs) if (job.outputFile.exists()) existingCount++;
+		boolean overwrite = false;
+		if (existingCount > 0) {
+			int answer = JOptionPane.showConfirmDialog(this, existingCount + "冊の出力ファイルが既にあります。上書きしますか？\n「いいえ」の場合は既存ファイルをスキップします。", "EPUB分割", JOptionPane.YES_NO_CANCEL_OPTION);
+			if (answer == JOptionPane.CANCEL_OPTION || answer == JOptionPane.CLOSED_OPTION) return;
+			overwrite = answer == JOptionPane.YES_OPTION;
+		}
+
+		final boolean includeCommonPages = jCheckEpubSplitCommonPages.isSelected();
+		final boolean finalOverwrite = overwrite;
+		final int[] succeeded = {0};
+		final int[] skipped = {0};
+		final java.util.List<String> failures = new ArrayList<String>();
+		new SwingWorker<Void, Void>() {
+			@Override protected Void doInBackground() {
+				running = true;
+				setConvertEnabled(false);
+				for (int i = 0; i < jobs.size(); i++) {
+					EpubSplitJob job = jobs.get(i);
+					if (job.outputFile.exists() && !finalOverwrite) {
+						skipped[0]++;
+						LogAppender.println("[" + (i + 1) + "/" + jobs.size() + "] 既存ファイルをスキップ: " + job.outputFile.getPath());
+						continue;
+					}
+					try {
+						LogAppender.println("[" + (i + 1) + "/" + jobs.size() + "] EPUBを分割します: " + job.plan.inputFile.getName() + "（" + job.range + "）");
+						EpubSplitter.split(job.plan.inputFile, job.outputFile, job.range, includeCommonPages);
+						succeeded[0]++;
+						LogAppender.println("EPUB分割完了: " + job.outputFile.getPath());
+					} catch (Exception e) {
+						failures.add(job.plan.inputFile.getName() + "（" + job.range + "）: " + e.getMessage());
+						LogAppender.error("EPUB分割エラー: " + job.plan.inputFile.getName() + "（" + job.range + "）: " + e.getMessage());
+					}
+				}
+				return null;
+			}
+			@Override protected void done() {
+				setConvertEnabled(true);
+				running = false;
+				StringBuilder result = new StringBuilder("EPUB分割が完了しました\n成功: ").append(succeeded[0]).append("冊\nスキップ: ").append(skipped[0]).append("冊\n失敗: ").append(failures.size()).append("冊");
+				for (String failure : failures) result.append("\n").append(failure);
+				JOptionPane.showMessageDialog(AozoraEpub3Applet.this, result.toString(), "EPUB分割",
+						failures.isEmpty() ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE);
+			}
+		}.execute();
 	}
 
 	private void processExistingEpub()
@@ -5159,7 +5415,8 @@ public class AozoraEpub3Applet extends JFrame
 		String epubProcessMode = props.getProperty("EpubProcessMode");
 		if (epubProcessMode == null) epubProcessMode = "1".equals(props.getProperty("EpubRemoveImages")) ? "remove" : "convert";
 		jRadioEpubProcessRemove.setSelected("remove".equals(epubProcessMode));
-		jRadioEpubProcessConvert.setSelected(!jRadioEpubProcessRemove.isSelected());
+		jRadioEpubProcessSplit.setSelected("split".equals(epubProcessMode));
+		jRadioEpubProcessConvert.setSelected(!jRadioEpubProcessRemove.isSelected() && !jRadioEpubProcessSplit.isSelected());
 		int epubImageMode = -1; try { epubImageMode = Integer.parseInt(props.getProperty("EpubProcessImageMode")); } catch (Exception e) {}
 		if (epubImageMode < 0 || epubImageMode > 4) {
 			if (imageColorDepth == 2) epubImageMode = 2;
@@ -5182,6 +5439,10 @@ public class AozoraEpub3Applet extends JFrame
 		if (epubRemoveTarget < 0 || epubRemoveTarget > 2) epubRemoveTarget = 0;
 		jComboEpubRemoveTarget.setSelectedIndex(epubRemoveTarget);
 		setPropsSelected(jCheckEpubRemoveChapterLeadingImages, props, "EpubRemoveChapterLeadingImages");
+		int epubSplitMode = 0; try { epubSplitMode = Integer.parseInt(props.getProperty("EpubSplitMode")); } catch (Exception e) {}
+		jComboEpubSplitMode.setSelectedIndex(epubSplitMode >= 0 && epubSplitMode <= 3 ? epubSplitMode : 0);
+		if (props.getProperty("EpubSplitValue") != null) jTextEpubSplitValue.setText(props.getProperty("EpubSplitValue"));
+		setPropsSelected(jCheckEpubSplitCommonPages, props, "EpubSplitCommonPages", true);
 		updateEpubProcessControls();
 		//画像回り込み
 		setPropsSelected(jCheckImageFloat, props, "ImageFloat");
@@ -5397,7 +5658,7 @@ public class AozoraEpub3Applet extends JFrame
 		props.setProperty("ImagePng", this.jCheckImagePng.isSelected()?"1":"");
 		props.setProperty("ImageColorDepth", this.jCheckImageColorDepth.isSelected() ? new String[] {"2", "4", "16"}[this.jComboImageColorDepth.getSelectedIndex()] : "0");
 		props.setProperty("ImageDither", this.jCheckImageDither.isSelected()?"1":"");
-		props.setProperty("EpubProcessMode", this.jRadioEpubProcessRemove.isSelected()?"remove":"convert");
+		props.setProperty("EpubProcessMode", this.jRadioEpubProcessSplit.isSelected()?"split":(this.jRadioEpubProcessRemove.isSelected()?"remove":"convert"));
 		props.setProperty("EpubProcessImageMode", ""+this.jComboEpubProcessImageMode.getSelectedIndex());
 		props.setProperty("EpubProcessDither", this.jCheckEpubProcessDither.isSelected()?"1":"");
 		props.setProperty("EpubProcessPng", this.jCheckEpubProcessPng.isSelected()?"1":"");
@@ -5408,6 +5669,9 @@ public class AozoraEpub3Applet extends JFrame
 		props.setProperty("EpubRemoveTarget", ""+this.jComboEpubRemoveTarget.getSelectedIndex());
 		props.setProperty("EpubRemoveChapterLeadingImages", this.jCheckEpubRemoveChapterLeadingImages.isSelected()?"1":"");
 		props.setProperty("EpubRemoveImageOnlyPages", this.jCheckEpubRemoveImageOnlyPages.isSelected()?"1":"");
+		props.setProperty("EpubSplitMode", ""+this.jComboEpubSplitMode.getSelectedIndex());
+		props.setProperty("EpubSplitValue", this.jTextEpubSplitValue.getText());
+		props.setProperty("EpubSplitCommonPages", this.jCheckEpubSplitCommonPages.isSelected()?"1":"");
 		//画像回り込み
 		props.setProperty("ImageFloat", this.jCheckImageFloat.isSelected()?"1":"");
 		props.setProperty("ImageFloatType", ""+this.jComboImageFloatType.getSelectedIndex());
